@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+from typing import Optional
+from pydantic import BaseModel
+
+
+class Author(BaseModel):
+    id: str
+    name: str
+
+
+class BookMetadata(BaseModel):
+    id: str
+    library_id: str
+    title: str
+    authors: list[Author] = []
+    series: Optional[str] = None
+    series_index: Optional[float] = None
+    published_year: Optional[str] = None
+    narrator: Optional[str] = None
+    abs_path: str
+    abs_library_root: str
+
+
+class Library(BaseModel):
+    id: str
+    name: str
+    folders: list[str] = []
+
+
+class PreviewRequest(BaseModel):
+    template: str
+    items: list[dict]
+
+
+class PreviewItem(BaseModel):
+    book_id: str
+    library_id: str
+    current_name: str
+    proposed_name: str
+    current_path: str
+    proposed_path: str
+    conflict: bool
+    no_change: bool
+
+
+class RenameItem(BaseModel):
+    book_id: str
+    library_id: str
+    current_path: str
+
+
+class RenameRequest(BaseModel):
+    template: str
+    items: list[RenameItem]
+    dry_run: bool = False
+
+
+class RenameResult(BaseModel):
+    book_id: str
+    success: bool
+    error: Optional[str] = None
+    old_path: str
+    new_path: str
+
+
+class RenameResponse(BaseModel):
+    results: list[RenameResult]
+    scan_triggered: bool

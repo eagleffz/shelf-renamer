@@ -1,0 +1,15 @@
+services:
+  shelf-renamer:
+    image: ghcr.io/eagleffz/shelf-renamer:latest
+    ports:
+      - "8000:8000"
+    environment:
+      ABS_URL: ${ABS_URL}
+      ABS_TOKEN: ${ABS_TOKEN}
+      MEDIA_ROOT: /media
+      DEFAULT_TEMPLATE: ${DEFAULT_TEMPLATE:-{author} - {title} ({year})}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${AUDIOBOOK_PATH}:/media:rw
+    user: "${UID:-1000}:${GID:-1000}"
+    restart: unless-stopped

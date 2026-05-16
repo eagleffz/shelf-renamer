@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//opt/homebrew/opt/**)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/pytest -v)",
+      "Bash(npm install *)"
+    ]
+  }
+}
