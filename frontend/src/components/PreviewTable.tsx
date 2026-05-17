@@ -4,6 +4,22 @@ interface Props {
   items: PreviewItem[]
 }
 
+function PathBreadcrumb({ path, className }: { path: string; className?: string }) {
+  const parts = path.split('/')
+  return (
+    <span className={`breadcrumb ${className ?? ''}`}>
+      {parts.map((part, i) => (
+        <span key={i}>
+          {i > 0 && <span className="breadcrumb-sep">/</span>}
+          <span className={i === parts.length - 1 ? 'breadcrumb-leaf' : 'breadcrumb-dir'}>
+            {part}
+          </span>
+        </span>
+      ))}
+    </span>
+  )
+}
+
 export function PreviewTable({ items }: Props) {
   if (!items.length) return null
 
@@ -11,7 +27,7 @@ export function PreviewTable({ items }: Props) {
   const noChange = items.filter((i) => i.no_change)
 
   return (
-    <div className="table-wrap">
+    <div className="preview-wrap">
       {changes.length === 0 && (
         <p className="info">All selected books already match the template. Nothing to rename.</p>
       )}
@@ -19,18 +35,18 @@ export function PreviewTable({ items }: Props) {
         <table className="preview-table">
           <thead>
             <tr>
-              <th>Current name</th>
+              <th>Current path</th>
               <th></th>
-              <th>Proposed name</th>
+              <th>Proposed path</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {changes.map((item) => (
               <tr key={item.book_id} className={item.conflict ? 'conflict' : ''}>
-                <td className="monospace old-name">{item.current_name}</td>
+                <td><PathBreadcrumb path={item.current_name} className="old-name" /></td>
                 <td className="arrow">→</td>
-                <td className="monospace new-name">{item.proposed_name}</td>
+                <td><PathBreadcrumb path={item.proposed_name} className="new-name" /></td>
                 <td>
                   {item.conflict ? (
                     <span className="badge badge-conflict">Conflict</span>
