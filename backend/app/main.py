@@ -56,6 +56,26 @@ def _container_path(abs_path: str, abs_library_root: str) -> str:
     return os.path.join(settings.media_root, rel)
 
 
+@app.get("/api/debug/library/{library_id}")
+async def debug_library(library_id: str):
+    """Return raw ABS metadata for first item — remove after debugging."""
+    try:
+        r = await _client()._client.get(
+            f"/api/libraries/{library_id}/items", params={"limit": 1, "page": 0}
+        )
+        data = r.json()
+        results = data.get("results", [])
+        if not results:
+            return {"error": "no items"}
+        item = results[0]
+        return {
+            "path": item.get("path"),
+            "metadata": item.get("media", {}).get("metadata", {}),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/health")
 async def health():
     reachable = await _client().ping()
