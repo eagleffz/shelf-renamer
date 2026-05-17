@@ -14,6 +14,8 @@ export interface BookMetadata {
   narrator: string | null
   abs_path: string
   abs_library_root: string
+  is_file: boolean
+  file_extension: string
 }
 
 export interface Library {

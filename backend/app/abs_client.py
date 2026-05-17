@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import httpx
 from .models import Author, BookMetadata, Library
+
+AUDIO_EXTENSIONS = {'.m4b', '.mp3', '.mp4', '.m4a', '.flac', '.aac', '.ogg', '.opus', '.wma'}
 
 
 class ABSClientError(Exception):
@@ -106,6 +109,10 @@ class ABSClient:
             narrators = meta.get("narrators", [])
             narrator = narrators[0] if narrators else meta.get("narratorName") or None
 
+            item_path = item.get("path", "")
+            ext = os.path.splitext(item_path)[1].lower()
+            is_file = ext in AUDIO_EXTENSIONS
+
             books.append(
                 BookMetadata(
                     id=item["id"],
@@ -116,7 +123,9 @@ class ABSClient:
                     series_index=series_index,
                     published_year=meta.get("publishedYear"),
                     narrator=narrator,
-                    abs_path=item.get("path", ""),
+                    abs_path=item_path,
+                    is_file=is_file,
+                    file_extension=ext if is_file else "",
                     abs_library_root=lib_root,
                 )
             )

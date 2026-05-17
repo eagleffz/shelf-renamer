@@ -20,6 +20,8 @@ class BookMetadata(BaseModel):
     narrator: Optional[str] = None
     abs_path: str
     abs_library_root: str
+    is_file: bool = False
+    file_extension: str = ""
 
 
 class Library(BaseModel):

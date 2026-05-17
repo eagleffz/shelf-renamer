@@ -64,7 +64,11 @@ def render_template(template: str, book: BookMetadata) -> str:
         narrator=sanitize_filename(book.narrator or ""),
     )
     result = template.format_map(variables)
-    return _cleanup(result)
+    base = _cleanup(result)
+    # append original extension for single-file items
+    if book.is_file and book.file_extension:
+        return base + book.file_extension
+    return base
 
 
 def build_proposed_path(current_path: str, new_folder_name: str) -> str:

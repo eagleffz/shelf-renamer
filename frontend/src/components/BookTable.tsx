@@ -27,7 +27,8 @@ export function BookTable({ books, selected, onToggle, onSelectAll, loading }: P
                 title="Select all"
               />
             </th>
-            <th>Folder name</th>
+            <th>Type</th>
+            <th>Current name</th>
             <th>Title</th>
             <th>Author</th>
             <th>Year</th>
@@ -36,7 +37,7 @@ export function BookTable({ books, selected, onToggle, onSelectAll, loading }: P
         </thead>
         <tbody>
           {books.map((book) => {
-            const folderName = book.abs_path.split('/').at(-1) ?? book.abs_path
+            const itemName = book.abs_path.split('/').at(-1) ?? book.abs_path
             return (
               <tr
                 key={book.id}
@@ -50,7 +51,12 @@ export function BookTable({ books, selected, onToggle, onSelectAll, loading }: P
                     onChange={() => onToggle(book.id)}
                   />
                 </td>
-                <td className="monospace">{folderName}</td>
+                <td>
+                  <span className={`badge ${book.is_file ? 'badge-file' : 'badge-folder'}`}>
+                    {book.is_file ? book.file_extension.replace('.', '').toUpperCase() : 'folder'}
+                  </span>
+                </td>
+                <td className="monospace">{itemName}</td>
                 <td>{book.title}</td>
                 <td>{book.authors.map((a) => a.name).join(', ')}</td>
                 <td>{book.published_year ?? '—'}</td>
