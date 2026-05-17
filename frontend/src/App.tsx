@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppConfig,
   BookMetadata,
@@ -42,6 +42,9 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [renamedIds, setRenamedIds] = useState<Set<string>>(new Set())
+
+  // books that already match the current template (computed in background)
+  const [alreadyCorrectIds, setAlreadyCorrectIds] = useState<Set<string>>(new Set())
 
   // filter: show only books that don't match the template
   const [filterActive, setFilterActive] = useState(false)
@@ -89,6 +92,22 @@ export default function App() {
     setAuthenticated(true)
   }
 
+  const computePreviewAll = useCallback(async () => {
+    if (!books.length || !template) return null
+    const items = books.map((b) => ({ book_id: b.id, library_id: b.library_id }))
+    const result = await previewRename(template, items)
+    setAlreadyCorrectIds(new Set(result.filter((r) => r.no_change).map((r) => r.book_id)))
+    return result
+  }, [books, template])
+
+  // background debounced computation whenever books or template change
+  const bgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (bgTimerRef.current) clearTimeout(bgTimerRef.current)
+    bgTimerRef.current = setTimeout(() => { computePreviewAll().catch(() => {}) }, 700)
+    return () => { if (bgTimerRef.current) clearTimeout(bgTimerRef.current) }
+  }, [computePreviewAll])
+
   async function toggleFilter() {
     if (filterActive) {
       setFilterActive(false)
@@ -98,9 +117,9 @@ export default function App() {
     setFilterLoading(true)
     setFilterActive(true)
     try {
-      const items = books.map((b) => ({ book_id: b.id, library_id: b.library_id }))
-      const result = await previewRename(template, items)
-      setFilterIds(new Set(result.filter((r) => !r.no_change).map((r) => r.book_id)))
+      const result = await computePreviewAll()
+      if (result) setFilterIds(new Set(result.filter((r) => !r.no_change).map((r) => r.book_id)))
+      else { setFilterActive(false); setFilterIds(null) }
     } catch {
       setFilterActive(false)
       setFilterIds(null)
@@ -336,6 +355,7 @@ export default function App() {
             books={displayedBooks}
             selected={selected}
             renamedIds={renamedIds}
+            alreadyCorrectIds={alreadyCorrectIds}
             onToggle={toggleBook}
             onSelectAll={toggleAll}
             loading={loading}
