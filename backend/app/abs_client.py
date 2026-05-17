@@ -50,7 +50,14 @@ class ABSClient:
             libraries.append(Library(id=lib["id"], name=lib["name"], folders=folders))
         return libraries
 
-    async def get_library_items(self, library_id: str) -> list[BookMetadata]:
+    async def get_library_items(self, library_id: str, lib_root: str = "") -> list[BookMetadata]:
+        if not lib_root:
+            libs = await self.get_libraries()
+            for lib in libs:
+                if lib.id == library_id and lib.folders:
+                    lib_root = lib.folders[0]
+                    break
+
         items: list[dict] = []
         page = 0
         limit = 100
@@ -70,14 +77,6 @@ class ABSClient:
             if len(items) >= data.get("total", 0):
                 break
             page += 1
-
-        # determine library root (first folder)
-        libs = await self.get_libraries()
-        lib_root = ""
-        for lib in libs:
-            if lib.id == library_id and lib.folders:
-                lib_root = lib.folders[0]
-                break
 
         books = []
         for item in items:

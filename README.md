@@ -2,7 +2,7 @@
 
 Web app for clean file-level renaming of audiobooks in [Audiobookshelf](https://www.audiobookshelf.org/). Fetches metadata via ABS API, lets you define a naming template, previews proposed renames, then renames the folders on disk and triggers an ABS re-scan.
 
-![Browse → Preview → Rename flow](https://via.placeholder.com/800x400?text=Browse+%E2%86%92+Preview+%E2%86%92+Rename)
+<!-- TODO: add screenshot -->
 
 ## Features
 
