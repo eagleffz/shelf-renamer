@@ -201,6 +201,6 @@ async def rename(req: RenameRequest):
 
 
 # Serve built frontend — must be last
-_frontend_dist = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
+_frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.isdir(_frontend_dist):
     app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="static")
