@@ -21,12 +21,12 @@ type Phase = 'browse' | 'preview' | 'results'
 
 const TEMPLATE_VARS = [
   '{title}', '{author}', '{author_lf}', '{authors}',
-  '{year}', '{series}', '{series_index}', '{narrator}',
+  '{year}', '{series}', '{series_index}', '{series_index_tag}', '{narrator}',
 ]
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>('browse')
-  const [template, setTemplate] = useState('{author}/{series}/{title} ({year})')
+  const [template, setTemplate] = useState('{author_lf}/{series}/{series_index_tag} - {title}')
   const [libraryId, setLibraryId] = useState('')
   const [books, setBooks] = useState<BookMetadata[]>([])
   const [loading, setLoading] = useState(false)

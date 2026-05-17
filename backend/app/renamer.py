@@ -29,8 +29,7 @@ def _format_series_index(idx: Optional[float]) -> str:
 
 
 def sanitize_filename(name: str) -> str:
-    name = re.sub(r'\s*[/\\:*?"<>|]\s*', " - ", name)
-    name = re.sub(r"-{2,}", "-", name)
+    name = re.sub(r'[/\\:*?"<>|]', " ", name)
     name = re.sub(r" {2,}", " ", name)
     return name.strip(" .-")
 
@@ -49,6 +48,7 @@ def _cleanup(name: str) -> str:
 def _build_variables(book: BookMetadata) -> _SafeDict:
     first_author = book.authors[0].name if book.authors else ""
     all_authors = " & ".join(a.name for a in book.authors) if book.authors else ""
+    raw_idx = _format_series_index(book.series_index)
     return _SafeDict(
         title=sanitize_filename(book.title),
         author=sanitize_filename(first_author),
@@ -56,7 +56,8 @@ def _build_variables(book: BookMetadata) -> _SafeDict:
         authors=sanitize_filename(all_authors),
         year=sanitize_filename(book.published_year or ""),
         series=sanitize_filename(book.series or ""),
-        series_index=_format_series_index(book.series_index),
+        series_index=raw_idx,
+        series_index_tag=f"#{raw_idx}" if raw_idx else "",
         narrator=sanitize_filename(book.narrator or ""),
     )
 

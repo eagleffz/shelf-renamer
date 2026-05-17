@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     abs_url: str = "http://localhost:13378"
     abs_token: str = ""
     media_root: str = "/media"
-    default_template: str = "{author}/{title} ({year})"
+    default_template: str = "{author_lf}/{series}/{series_index_tag} - {title}"
     log_level: str = "INFO"
     debug: bool = False
 
