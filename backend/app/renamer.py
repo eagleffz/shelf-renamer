@@ -29,10 +29,10 @@ def _format_series_index(idx: Optional[float]) -> str:
 
 
 def sanitize_filename(name: str) -> str:
-    name = re.sub(r'[/\\:*?"<>|]', "-", name)
+    name = re.sub(r'\s*[/\\:*?"<>|]\s*', " - ", name)
     name = re.sub(r"-{2,}", "-", name)
     name = re.sub(r" {2,}", " ", name)
-    return name.strip(" .")
+    return name.strip(" .-")
 
 
 def _cleanup(name: str) -> str:
