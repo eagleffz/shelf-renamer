@@ -12,9 +12,10 @@ COPY backend/requirements.txt ./
 RUN /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.12-slim AS runtime
+ARG VERSION=dev
 WORKDIR /app
 COPY --from=backend-deps /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH" APP_VERSION=${VERSION}
 COPY backend/app ./app
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 RUN useradd -u 1000 -m appuser && mkdir -p /data && chmod 777 /data

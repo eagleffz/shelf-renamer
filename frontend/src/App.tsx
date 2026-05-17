@@ -268,7 +268,10 @@ export default function App() {
     <div className="app">
       <header className="navbar">
         <div className="navbar-left">
-          <h1 className="app-title">shelf-renamer</h1>
+          <h1 className="app-title">
+            shelf-renamer
+            <span className="app-version">{config.version}</span>
+          </h1>
           <LibrarySelector selectedId={libraryId} onChange={setLibraryId} />
           {config.auth_required && (
             <button className="btn-signout" onClick={handleSignOut} title="Sign out / re-login">

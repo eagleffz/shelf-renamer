@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     debug: bool = False
     app_password: str = ""
     db_path: str = "/data/shelf-renamer.db"
+    app_version: str = "dev"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

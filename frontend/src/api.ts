@@ -58,6 +58,7 @@ export interface RenameResponse {
 export interface AppConfig {
   default_template: string
   auth_required: boolean
+  version: string
 }
 
 const TOKEN_KEY = 'shelf-renamer-token'
