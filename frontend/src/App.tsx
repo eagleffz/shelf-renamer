@@ -369,6 +369,7 @@ export default function App() {
             selected={selected}
             renamedIds={renamedIds}
             alreadyCorrectIds={alreadyCorrectIds}
+            absUrl={config.abs_url}
             onToggle={toggleBook}
             onSelectAll={toggleAll}
             loading={loading}

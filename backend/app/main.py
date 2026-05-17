@@ -92,6 +92,7 @@ async def config():
         "default_template": s.default_template,
         "auth_required": bool(s.app_password),
         "version": s.app_version,
+        "abs_url": s.abs_url,
     }
 
 

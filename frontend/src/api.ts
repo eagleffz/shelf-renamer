@@ -59,6 +59,7 @@ export interface AppConfig {
   default_template: string
   auth_required: boolean
   version: string
+  abs_url: string
 }
 
 const TOKEN_KEY = 'shelf-renamer-token'

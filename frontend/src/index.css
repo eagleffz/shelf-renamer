@@ -68,6 +68,18 @@ body {
   letter-spacing: 0.02em;
 }
 
+.btn-abs-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.4;
+  padding: 4px;
+  border-radius: 3px;
+  transition: opacity 0.15s, color 0.15s;
+}
+.btn-abs-link:hover { opacity: 1; color: var(--primary); }
+
 .btn-signout {
   background: none;
   border: none;
