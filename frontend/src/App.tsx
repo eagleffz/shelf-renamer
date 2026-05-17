@@ -26,7 +26,7 @@ const TEMPLATE_VARS = [
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>('browse')
-  const [template, setTemplate] = useState('{author} - {title} ({year})')
+  const [template, setTemplate] = useState('{author}/{series}/{title} ({year})')
   const [libraryId, setLibraryId] = useState('')
   const [books, setBooks] = useState<BookMetadata[]>([])
   const [loading, setLoading] = useState(false)
@@ -135,7 +135,7 @@ export default function App() {
               className="template-input"
               value={template}
               onChange={(e) => setTemplate(e.target.value)}
-              placeholder="e.g. {author} - {title} ({year})"
+              placeholder="e.g. {author}/{series}/{title} ({year})"
               disabled={phase !== 'browse'}
             />
             <button

@@ -36,24 +36,19 @@ def sanitize_filename(name: str) -> str:
 
 
 def _cleanup(name: str) -> str:
-    # strip empty parens/brackets left by missing variables
     name = re.sub(r"\(\s*\)", "", name)
     name = re.sub(r"\[\s*\]", "", name)
-    # collapse multiple spaces
     name = re.sub(r" {2,}", " ", name)
-    # collapse multiple dashes (but preserve intentional " - " separators)
     name = re.sub(r"-{2,}", "-", name)
-    # strip trailing/leading separator artifacts
     name = re.sub(r"\s+-\s*$", "", name)
     name = re.sub(r"^\s*-\s+", "", name)
     return name.strip(" .-")
 
 
-def render_template(template: str, book: BookMetadata) -> str:
+def _build_variables(book: BookMetadata) -> _SafeDict:
     first_author = book.authors[0].name if book.authors else ""
     all_authors = " & ".join(a.name for a in book.authors) if book.authors else ""
-
-    variables = _SafeDict(
+    return _SafeDict(
         title=sanitize_filename(book.title),
         author=sanitize_filename(first_author),
         author_lf=sanitize_filename(_to_last_first(first_author)),
@@ -63,16 +58,31 @@ def render_template(template: str, book: BookMetadata) -> str:
         series_index=_format_series_index(book.series_index),
         narrator=sanitize_filename(book.narrator or ""),
     )
-    result = template.format_map(variables)
-    base = _cleanup(result)
-    # append original extension for single-file items
-    if book.is_file and book.file_extension:
-        return base + book.file_extension
-    return base
 
 
-def build_proposed_path(current_path: str, new_folder_name: str) -> str:
-    return os.path.join(os.path.dirname(current_path), new_folder_name)
+def render_path_template(template: str, book: BookMetadata, library_root: str) -> str:
+    """
+    Renders a path-aware template. '/' in the template creates subdirectory levels.
+    Empty segments (e.g. {series} when series is None) are dropped automatically.
+    Returns the absolute proposed path rooted at library_root.
+    For file items, the extension is appended to the last segment.
+    """
+    variables = _build_variables(book)
+    segments = template.split("/")
+    rendered: list[str] = []
+    for i, seg in enumerate(segments):
+        part = _cleanup(seg.format_map(variables))
+        if not part:
+            continue
+        # append extension only to the final segment of a file item
+        if book.is_file and book.file_extension and i == len(segments) - 1:
+            part = part + book.file_extension
+        rendered.append(part)
+
+    if not rendered:
+        rendered = [book.title or book.id]
+
+    return os.path.join(library_root, *rendered)
 
 
 def safe_rename(old_path: str, new_path: str) -> None:
@@ -80,4 +90,5 @@ def safe_rename(old_path: str, new_path: str) -> None:
         raise RenameError(f"Source does not exist: {old_path}")
     if os.path.exists(new_path):
         raise RenameError(f"Target already exists: {new_path}")
+    os.makedirs(os.path.dirname(new_path), exist_ok=True)
     os.rename(old_path, new_path)

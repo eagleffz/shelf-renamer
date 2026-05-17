@@ -17,6 +17,8 @@ def _make_book() -> BookMetadata:
         narrator="Nigel Planer",
         abs_path="/abs/books/Terry Pratchett/Guards Guards",
         abs_library_root="/abs/books",
+        is_file=False,
+        file_extension="",
     )
 
 

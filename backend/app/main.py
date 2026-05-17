@@ -17,7 +17,7 @@ from .models import (
     RenameResponse,
     RenameResult,
 )
-from .renamer import build_proposed_path, render_template, safe_rename, RenameError
+from .renamer import render_path_template, safe_rename, RenameError
 
 logging.basicConfig(level=get_settings().log_level)
 logger = logging.getLogger(__name__)
@@ -114,16 +114,17 @@ async def preview(req: PreviewRequest):
 
     book_map = {b.id: b for b in books}
     results: list[PreviewItem] = []
+    lib_root = get_settings().media_root
 
     for item in req.items:
         book = book_map.get(item["book_id"])
         if not book:
             continue
         container_path = _container_path(book.abs_path, book.abs_library_root)
-        current_name = os.path.basename(container_path)
-        proposed_name = render_template(req.template, book)
-        proposed_path = build_proposed_path(container_path, proposed_name)
-        no_change = current_name == proposed_name
+        proposed_path = render_path_template(req.template, book, lib_root)
+        current_name = os.path.relpath(container_path, lib_root)
+        proposed_name = os.path.relpath(proposed_path, lib_root)
+        no_change = container_path == proposed_path
         conflict = not no_change and os.path.exists(proposed_path)
         results.append(
             PreviewItem(
@@ -174,8 +175,7 @@ async def rename(req: RenameRequest):
             continue
 
         container_path = _container_path(book.abs_path, book.abs_library_root)
-        proposed_name = render_template(req.template, book)
-        proposed_path = build_proposed_path(container_path, proposed_name)
+        proposed_path = render_path_template(req.template, book, get_settings().media_root)
 
         if req.dry_run or container_path == proposed_path:
             results.append(
