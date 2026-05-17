@@ -83,12 +83,20 @@ class ABSClient:
         for item in items:
             meta = item.get("media", {}).get("metadata", {})
 
-            # ABS returns authors as array of {id,name} objects OR as authorName string
+            # ABS returns authors as array of {id,name} objects OR as authorName string.
+            # authorName may contain roles like "Übersetzer" (translator) concatenated
+            # with real authors — split on ", " and filter single-word non-name tokens.
             raw_authors = meta.get("authors", [])
             if raw_authors:
                 authors = [Author(id=a.get("id", ""), name=a.get("name", "")) for a in raw_authors]
             elif meta.get("authorName"):
-                authors = [Author(id="", name=meta["authorName"])]
+                parts = [p.strip() for p in meta["authorName"].split(",") if p.strip()]
+                # Real names have a space (First Last) or initials with dots (J.R.R.) or hyphens.
+                # Single-word role labels like "Übersetzer" (Translator) have none of these.
+                def _looks_like_name(s: str) -> bool:
+                    return " " in s or "." in s or "-" in s
+                names = [p for p in parts if _looks_like_name(p)]
+                authors = [Author(id="", name=n) for n in names] if names else [Author(id="", name=meta["authorName"])]
             else:
                 authors = []
 

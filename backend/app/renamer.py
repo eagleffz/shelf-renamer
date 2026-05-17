@@ -39,7 +39,8 @@ def _cleanup(name: str) -> str:
     name = re.sub(r"\(\s*\)", "", name)
     name = re.sub(r"\[\s*\]", "", name)
     name = re.sub(r" {2,}", " ", name)
-    name = re.sub(r"-{2,}", "-", name)
+    # collapse repeated separators: " - - " or "– –" → " - "
+    name = re.sub(r"(\s*[-–]\s*){2,}", " - ", name)
     name = re.sub(r"\s+-\s*$", "", name)
     name = re.sub(r"^\s*-\s+", "", name)
     return name.strip(" .-")
