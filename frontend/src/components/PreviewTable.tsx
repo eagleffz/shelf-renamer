@@ -1,7 +1,11 @@
-import type { PreviewItem } from '../api'
+import { useState } from 'react'
+import type { BookMetadata, PreviewItem } from '../api'
 
 interface Props {
   items: PreviewItem[]
+  books: BookMetadata[]
+  overrides: Record<string, Record<string, string>>
+  onOverrideChange: (bookId: string, field: string, value: string) => void
 }
 
 function FolderIcon() {
@@ -23,10 +27,8 @@ function FileIcon() {
 function PathBreadcrumb({ path, variant }: { path: string; variant: 'old' | 'new' }) {
   const parts = path.split('/').filter(Boolean)
   if (!parts.length) return <span className="breadcrumb-empty">—</span>
-
   const dirs = parts.slice(0, -1)
   const file = parts[parts.length - 1]
-
   return (
     <span className={`path-crumb path-crumb-${variant}`}>
       {dirs.map((dir, i) => (
@@ -44,11 +46,72 @@ function PathBreadcrumb({ path, variant }: { path: string; variant: 'old' | 'new
   )
 }
 
-export function PreviewTable({ items }: Props) {
+const OVERRIDE_FIELDS: { key: string; label: string; small?: boolean }[] = [
+  { key: 'author',       label: 'Author' },
+  { key: 'title',        label: 'Title' },
+  { key: 'series',       label: 'Series' },
+  { key: 'series_index', label: '#', small: true },
+  { key: 'year',         label: 'Year', small: true },
+  { key: 'narrator',     label: 'Narrator' },
+]
+
+function getBookDefault(book: BookMetadata, key: string): string {
+  switch (key) {
+    case 'author':       return book.authors[0]?.name ?? ''
+    case 'title':        return book.title
+    case 'series':       return book.series ?? ''
+    case 'series_index': return book.series_index != null ? String(book.series_index) : ''
+    case 'year':         return book.published_year ?? ''
+    case 'narrator':     return book.narrator ?? ''
+    default:             return ''
+  }
+}
+
+function OverrideEditor({
+  book,
+  overrides,
+  onCommit,
+}: {
+  book: BookMetadata
+  overrides: Record<string, string>
+  onCommit: (field: string, value: string) => void
+}) {
+  const [local, setLocal] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {}
+    for (const f of OVERRIDE_FIELDS) {
+      init[f.key] = overrides[f.key] ?? getBookDefault(book, f.key)
+    }
+    return init
+  })
+
+  return (
+    <div className="override-grid">
+      {OVERRIDE_FIELDS.map((f) => (
+        <label key={f.key} className={`override-field${f.small ? ' override-field-small' : ''}`}>
+          <span className="override-label">{f.label}</span>
+          <input
+            className="override-input"
+            value={local[f.key]}
+            onChange={(e) => setLocal((prev) => ({ ...prev, [f.key]: e.target.value }))}
+            onBlur={(e) => {
+              const current = overrides[f.key] ?? getBookDefault(book, f.key)
+              if (e.target.value !== current) onCommit(f.key, e.target.value)
+            }}
+          />
+        </label>
+      ))}
+    </div>
+  )
+}
+
+export function PreviewTable({ items, books, overrides, onOverrideChange }: Props) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
   if (!items.length) return null
 
   const changes = items.filter((i) => !i.no_change)
   const noChange = items.filter((i) => i.no_change)
+  const bookMap = Object.fromEntries(books.map((b) => [b.id, b]))
 
   return (
     <div className="preview-wrap">
@@ -63,23 +126,48 @@ export function PreviewTable({ items }: Props) {
               <th></th>
               <th>Proposed path</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {changes.map((item) => (
-              <tr key={item.book_id} className={item.conflict ? 'conflict' : ''}>
-                <td><PathBreadcrumb path={item.current_name} variant="old" /></td>
-                <td className="arrow">→</td>
-                <td><PathBreadcrumb path={item.proposed_name} variant="new" /></td>
-                <td>
-                  {item.conflict ? (
-                    <span className="badge badge-conflict">Conflict</span>
-                  ) : (
-                    <span className="badge badge-ok">OK</span>
+            {changes.map((item) => {
+              const isExpanded = expandedId === item.book_id
+              const book = bookMap[item.book_id]
+              return (
+                <>
+                  <tr key={item.book_id} className={item.conflict ? 'conflict' : ''}>
+                    <td><PathBreadcrumb path={item.current_name} variant="old" /></td>
+                    <td className="arrow">→</td>
+                    <td><PathBreadcrumb path={item.proposed_name} variant="new" /></td>
+                    <td>
+                      {item.conflict
+                        ? <span className="badge badge-conflict">Conflict</span>
+                        : <span className="badge badge-ok">OK</span>}
+                    </td>
+                    <td>
+                      <button
+                        className={`btn-edit${isExpanded ? ' btn-edit-active' : ''}`}
+                        title="Override metadata fields"
+                        onClick={() => setExpandedId(isExpanded ? null : item.book_id)}
+                      >
+                        ✎
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded && book && (
+                    <tr key={`${item.book_id}-edit`} className="override-row">
+                      <td colSpan={5}>
+                        <OverrideEditor
+                          book={book}
+                          overrides={overrides[item.book_id] ?? {}}
+                          onCommit={(field, value) => onOverrideChange(item.book_id, field, value)}
+                        />
+                      </td>
+                    </tr>
                   )}
-                </td>
-              </tr>
-            ))}
+                </>
+              )
+            })}
           </tbody>
         </table>
       )}

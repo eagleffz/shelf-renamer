@@ -50,6 +50,7 @@ class RenameItem(BaseModel):
     book_id: str
     library_id: str
     current_path: str
+    overrides: Optional[dict] = None
 
 
 class RenameRequest(BaseModel):

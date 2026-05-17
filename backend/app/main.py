@@ -52,6 +52,23 @@ def _client() -> ABSClient:
     return app.state.abs
 
 
+def _apply_overrides(book: BookMetadata, overrides: dict | None) -> BookMetadata:
+    if not overrides:
+        return book
+    data = book.model_dump()
+    if overrides.get("author"):
+        data["authors"] = [{"id": "override", "name": overrides["author"]}]
+    for src, dst in [("title", "title"), ("series", "series"), ("narrator", "narrator"), ("year", "published_year")]:
+        if src in overrides:
+            data[dst] = overrides[src] or None
+    if "series_index" in overrides:
+        try:
+            data["series_index"] = float(overrides["series_index"]) if overrides["series_index"] else None
+        except (ValueError, TypeError):
+            pass
+    return BookMetadata(**data)
+
+
 def _container_path(abs_path: str, abs_library_root: str) -> str:
     settings = get_settings()
     try:
@@ -122,6 +139,7 @@ async def preview(req: PreviewRequest):
         book = book_map.get(item["book_id"])
         if not book:
             continue
+        book = _apply_overrides(book, item.get("overrides"))
         container_path = _container_path(book.abs_path, book.abs_library_root)
         proposed_path = render_path_template(req.template, book, lib_root)
         current_name = os.path.relpath(container_path, lib_root)
@@ -175,6 +193,7 @@ async def rename(req: RenameRequest):
             )
             continue
 
+        book = _apply_overrides(book, item.overrides)
         container_path = _container_path(book.abs_path, book.abs_library_root)
         proposed_path = render_path_template(req.template, book, get_settings().media_root)
 

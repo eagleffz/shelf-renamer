@@ -39,6 +39,7 @@ export interface RenameItem {
   book_id: string
   library_id: string
   current_path: string
+  overrides?: Record<string, string>
 }
 
 export interface RenameResult {
@@ -102,7 +103,10 @@ export const fetchBooks = (libraryId: string) =>
 export const fetchHistory = (libraryId: string) =>
   request<string[]>(`/api/libraries/${libraryId}/history`)
 
-export const previewRename = (template: string, items: { book_id: string; library_id: string }[]) =>
+export const previewRename = (
+  template: string,
+  items: { book_id: string; library_id: string; overrides?: Record<string, string> }[],
+) =>
   request<PreviewItem[]>('/api/preview', {
     method: 'POST',
     body: JSON.stringify({ template, items }),

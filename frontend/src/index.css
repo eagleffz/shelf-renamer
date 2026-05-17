@@ -147,6 +147,8 @@ body {
 
 .btn-secondary { background: var(--secondary); color: var(--text); }
 .btn-secondary:hover:not(:disabled) { background: var(--secondary-hover); }
+.btn-secondary.btn-active { background: var(--primary); color: #fff; }
+.btn-secondary.btn-active:hover:not(:disabled) { background: var(--primary-hover); }
 
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
@@ -286,6 +288,61 @@ body {
 .path-crumb-new .path-icon-file { color: var(--primary); }
 
 .breadcrumb-empty { color: var(--text-muted); font-family: monospace; font-size: 12px; }
+
+/* Edit button in preview table */
+.btn-edit {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-edit:hover { border-color: var(--primary); color: var(--primary); }
+.btn-edit.btn-edit-active { background: rgba(99,102,241,0.12); border-color: var(--primary); color: var(--primary); }
+
+/* Override editor */
+.override-row td { background: rgba(99,102,241,0.04); border-top: 1px solid rgba(99,102,241,0.15); padding: 12px 14px; }
+
+.override-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.override-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 180px;
+}
+.override-field-small { flex: 0 1 90px; }
+
+.override-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.override-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+}
+.override-input:focus { border-color: var(--primary); }
 
 /* Login */
 .login-overlay {
