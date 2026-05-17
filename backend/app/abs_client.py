@@ -36,7 +36,10 @@ class ABSClient:
             return False
 
     async def get_libraries(self) -> list[Library]:
-        r = self._check(await self._client.get("/api/libraries"))
+        try:
+            r = self._check(await self._client.get("/api/libraries"))
+        except httpx.HTTPError as e:
+            raise ABSClientError(503, f"Cannot reach ABS: {e}") from e
         data = r.json()
         libraries = []
         for lib in data.get("libraries", []):
@@ -49,12 +52,15 @@ class ABSClient:
         page = 0
         limit = 100
         while True:
-            r = self._check(
-                await self._client.get(
-                    f"/api/libraries/{library_id}/items",
-                    params={"limit": limit, "page": page},
+            try:
+                r = self._check(
+                    await self._client.get(
+                        f"/api/libraries/{library_id}/items",
+                        params={"limit": limit, "page": page},
+                    )
                 )
-            )
+            except httpx.HTTPError as e:
+                raise ABSClientError(503, f"Cannot reach ABS: {e}") from e
             data = r.json()
             batch = data.get("results", [])
             items.extend(batch)
