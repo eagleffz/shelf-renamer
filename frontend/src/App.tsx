@@ -17,6 +17,7 @@ import {
   login,
   previewRename,
   setAuthToken,
+  setUnauthorizedHandler,
 } from './api'
 import { BookTable } from './components/BookTable'
 import { LibrarySelector } from './components/LibrarySelector'
@@ -64,12 +65,18 @@ export default function App() {
   const [showVarHelp, setShowVarHelp] = useState(false)
 
   useEffect(() => {
+    setUnauthorizedHandler(() => setAuthenticated(false))
     fetchConfig().then((cfg) => {
       setConfig(cfg)
       setTemplate(cfg.default_template)
       if (!cfg.auth_required || getAuthToken()) setAuthenticated(true)
     }).catch(() => {})
   }, [])
+
+  function handleSignOut() {
+    clearAuthToken()
+    setAuthenticated(false)
+  }
 
   useEffect(() => {
     if (!libraryId || !authenticated) return
@@ -187,8 +194,7 @@ export default function App() {
       setPreviewItems(result)
       setPhase('preview')
     } catch (e: unknown) {
-      if ((e as { status?: number }).status === 401) { clearAuthToken(); setAuthenticated(false) }
-      else setError((e as Error).message)
+      setError((e as Error).message)
     } finally {
       setWorking(false)
     }
@@ -231,8 +237,7 @@ export default function App() {
       const newIds = result.results.filter((r) => r.success).map((r) => r.book_id)
       setRenamedIds((prev) => new Set([...prev, ...newIds]))
     } catch (e: unknown) {
-      if ((e as { status?: number }).status === 401) { clearAuthToken(); setAuthenticated(false) }
-      else setError((e as Error).message)
+      setError((e as Error).message)
     } finally {
       setWorking(false)
     }
@@ -265,6 +270,11 @@ export default function App() {
         <div className="navbar-left">
           <h1 className="app-title">shelf-renamer</h1>
           <LibrarySelector selectedId={libraryId} onChange={setLibraryId} />
+          {config.auth_required && (
+            <button className="btn-signout" onClick={handleSignOut} title="Sign out / re-login">
+              Sign out
+            </button>
+          )}
         </div>
         <div className="navbar-right">
           <div className="template-wrap">

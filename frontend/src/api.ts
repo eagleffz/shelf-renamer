@@ -66,6 +66,9 @@ export const getAuthToken = () => localStorage.getItem(TOKEN_KEY) ?? ''
 export const setAuthToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
 export const clearAuthToken = () => localStorage.removeItem(TOKEN_KEY)
 
+let _onUnauthorized: (() => void) | null = null
+export const setUnauthorizedHandler = (fn: () => void) => { _onUnauthorized = fn }
+
 class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -81,6 +84,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   const res = await fetch(path, { headers, ...options })
   if (!res.ok) {
+    if (res.status === 401 && _onUnauthorized) {
+      clearAuthToken()
+      _onUnauthorized()
+    }
     const text = await res.text()
     throw new ApiError(res.status, text)
   }

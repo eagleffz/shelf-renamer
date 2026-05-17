@@ -58,6 +58,18 @@ body {
   white-space: nowrap;
 }
 
+.btn-signout {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.btn-signout:hover { color: var(--text); background: var(--secondary); }
+
 /* Select */
 .select {
   background: var(--bg);
