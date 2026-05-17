@@ -54,6 +54,17 @@ export interface RenameResponse {
   scan_triggered: boolean
 }
 
+export interface AppConfig {
+  default_template: string
+  auth_required: boolean
+}
+
+const TOKEN_KEY = 'shelf-renamer-token'
+
+export const getAuthToken = () => localStorage.getItem(TOKEN_KEY) ?? ''
+export const setAuthToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
+export const clearAuthToken = () => localStorage.removeItem(TOKEN_KEY)
+
 class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -63,10 +74,11 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  const token = getAuthToken()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(path, { headers, ...options })
   if (!res.ok) {
     const text = await res.text()
     throw new ApiError(res.status, text)
@@ -74,13 +86,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+export const fetchConfig = () => request<AppConfig>('/api/config')
+
+export const login = (password: string) =>
+  request<{ token: string }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  })
+
 export const fetchLibraries = () => request<Library[]>('/api/libraries')
 
 export const fetchBooks = (libraryId: string) =>
   request<BookMetadata[]>(`/api/libraries/${libraryId}/books`)
 
-export const fetchConfig = () =>
-  request<{ default_template: string }>('/api/config')
+export const fetchHistory = (libraryId: string) =>
+  request<string[]>(`/api/libraries/${libraryId}/history`)
 
 export const previewRename = (template: string, items: { book_id: string; library_id: string }[]) =>
   request<PreviewItem[]>('/api/preview', {

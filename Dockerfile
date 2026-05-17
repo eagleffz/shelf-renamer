@@ -17,7 +17,7 @@ COPY --from=backend-deps /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY backend/app ./app
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
-RUN useradd -u 1000 -m appuser
+RUN useradd -u 1000 -m appuser && mkdir -p /data && chmod 777 /data
 USER appuser
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \

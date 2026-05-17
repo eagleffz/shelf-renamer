@@ -9,7 +9,13 @@ services:
       MEDIA_ROOT: /media
       DEFAULT_TEMPLATE: ${DEFAULT_TEMPLATE:-{author} - {title} ({year})}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APP_PASSWORD: ${APP_PASSWORD:-}
+      DB_PATH: /data/shelf-renamer.db
     volumes:
       - ${AUDIOBOOK_PATH}:/media:rw
+      - shelf-renamer-data:/data
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
+
+volumes:
+  shelf-renamer-data:

@@ -3,12 +3,13 @@ import type { BookMetadata } from '../api'
 interface Props {
   books: BookMetadata[]
   selected: Set<string>
+  renamedIds: Set<string>
   onToggle: (id: string) => void
   onSelectAll: () => void
   loading: boolean
 }
 
-export function BookTable({ books, selected, onToggle, onSelectAll, loading }: Props) {
+export function BookTable({ books, selected, renamedIds, onToggle, onSelectAll, loading }: Props) {
   if (loading) return <p className="loading">Loading books…</p>
   if (!books.length) return null
 
@@ -38,6 +39,7 @@ export function BookTable({ books, selected, onToggle, onSelectAll, loading }: P
         <tbody>
           {books.map((book) => {
             const itemName = book.abs_path.split('/').at(-1) ?? book.abs_path
+            const wasRenamed = renamedIds.has(book.id)
             return (
               <tr
                 key={book.id}
@@ -55,6 +57,11 @@ export function BookTable({ books, selected, onToggle, onSelectAll, loading }: P
                   <span className={`badge ${book.is_file ? 'badge-file' : 'badge-folder'}`}>
                     {book.is_file ? book.file_extension.replace('.', '').toUpperCase() : 'folder'}
                   </span>
+                  {wasRenamed && (
+                    <span className="badge badge-renamed" title="Previously renamed by shelf-renamer">
+                      ✓
+                    </span>
+                  )}
                 </td>
                 <td className="monospace">{itemName}</td>
                 <td>{book.title}</td>

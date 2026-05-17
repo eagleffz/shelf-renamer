@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react'
 import type {
+  AppConfig,
   BookMetadata,
   PreviewItem,
   RenameItem,
   RenameResponse,
 } from './api'
 import {
+  clearAuthToken,
   confirmRename,
   fetchBooks,
   fetchConfig,
+  fetchHistory,
+  getAuthToken,
+  login,
   previewRename,
+  setAuthToken,
 } from './api'
 import { BookTable } from './components/BookTable'
 import { LibrarySelector } from './components/LibrarySelector'
+import { LoginPage } from './components/LoginPage'
 import { PreviewTable } from './components/PreviewTable'
 import { ResultsPane } from './components/ResultsPane'
 import './index.css'
@@ -25,12 +32,15 @@ const TEMPLATE_VARS = [
 ]
 
 export default function App() {
+  const [config, setConfig] = useState<AppConfig | null>(null)
+  const [authenticated, setAuthenticated] = useState(false)
   const [phase, setPhase] = useState<Phase>('browse')
   const [template, setTemplate] = useState('{author_lf}/{series}/{series_index_tag} - {title}')
   const [libraryId, setLibraryId] = useState('')
   const [books, setBooks] = useState<BookMetadata[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [renamedIds, setRenamedIds] = useState<Set<string>>(new Set())
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([])
   const [renameResponse, setRenameResponse] = useState<RenameResponse | null>(null)
   const [error, setError] = useState('')
@@ -38,18 +48,36 @@ export default function App() {
   const [showVarHelp, setShowVarHelp] = useState(false)
 
   useEffect(() => {
-    fetchConfig().then((cfg) => setTemplate(cfg.default_template)).catch(() => {})
+    fetchConfig().then((cfg) => {
+      setConfig(cfg)
+      setTemplate(cfg.default_template)
+      if (!cfg.auth_required || getAuthToken()) {
+        setAuthenticated(true)
+      }
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
-    if (!libraryId) return
+    if (!libraryId || !authenticated) return
     setLoading(true)
     setSelected(new Set())
-    fetchBooks(libraryId)
-      .then(setBooks)
+    Promise.all([
+      fetchBooks(libraryId),
+      fetchHistory(libraryId),
+    ])
+      .then(([bks, ids]) => {
+        setBooks(bks)
+        setRenamedIds(new Set(ids))
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [libraryId])
+  }, [libraryId, authenticated])
+
+  async function handleLogin(password: string) {
+    const { token } = await login(password)
+    setAuthToken(token)
+    setAuthenticated(true)
+  }
 
   function toggleBook(id: string) {
     setSelected((prev) => {
@@ -78,7 +106,12 @@ export default function App() {
       setPreviewItems(result)
       setPhase('preview')
     } catch (e: unknown) {
-      setError((e as Error).message)
+      if ((e as { status?: number }).status === 401) {
+        clearAuthToken()
+        setAuthenticated(false)
+      } else {
+        setError((e as Error).message)
+      }
     } finally {
       setWorking(false)
     }
@@ -98,8 +131,15 @@ export default function App() {
       const result = await confirmRename(template, items)
       setRenameResponse(result)
       setPhase('results')
+      const newIds = result.results.filter((r) => r.success).map((r) => r.book_id)
+      setRenamedIds((prev) => new Set([...prev, ...newIds]))
     } catch (e: unknown) {
-      setError((e as Error).message)
+      if ((e as { status?: number }).status === 401) {
+        clearAuthToken()
+        setAuthenticated(false)
+      } else {
+        setError((e as Error).message)
+      }
     } finally {
       setWorking(false)
     }
@@ -113,11 +153,20 @@ export default function App() {
     setError('')
     if (libraryId) {
       setLoading(true)
-      fetchBooks(libraryId)
-        .then(setBooks)
+      Promise.all([fetchBooks(libraryId), fetchHistory(libraryId)])
+        .then(([bks, ids]) => {
+          setBooks(bks)
+          setRenamedIds(new Set(ids))
+        })
         .catch((e: Error) => setError(e.message))
         .finally(() => setLoading(false))
     }
+  }
+
+  if (!config) return null
+
+  if (config.auth_required && !authenticated) {
+    return <LoginPage onLogin={handleLogin} />
   }
 
   const renameableCount = previewItems.filter((p) => !p.no_change && !p.conflict).length
@@ -195,6 +244,7 @@ export default function App() {
           <BookTable
             books={books}
             selected={selected}
+            renamedIds={renamedIds}
             onToggle={toggleBook}
             onSelectAll={toggleAll}
             loading={loading}

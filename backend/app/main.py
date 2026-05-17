@@ -4,13 +4,16 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .abs_client import ABSClient, ABSClientError
+from .auth import init_auth, require_auth, verify_password
 from .config import get_settings
+from .database import get_renamed_book_ids, init_db, record_rename
 from .models import (
+    LoginRequest,
     PreviewItem,
     PreviewRequest,
     RenameRequest,
@@ -27,6 +30,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.abs = ABSClient(settings.abs_url, settings.abs_token)
+    init_auth()
+    await init_db()
     yield
     await app.state.abs.close()
 
@@ -64,10 +69,22 @@ async def health():
 
 @app.get("/api/config")
 async def config():
-    return {"default_template": get_settings().default_template}
+    s = get_settings()
+    return {
+        "default_template": s.default_template,
+        "auth_required": bool(s.app_password),
+    }
 
 
-@app.get("/api/libraries")
+@app.post("/api/auth/login")
+async def login(req: LoginRequest):
+    token = verify_password(req.password)
+    if token is None:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    return {"token": token}
+
+
+@app.get("/api/libraries", dependencies=[Depends(require_auth)])
 async def libraries():
     try:
         return await _client().get_libraries()
@@ -75,7 +92,7 @@ async def libraries():
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
-@app.get("/api/libraries/{library_id}/books")
+@app.get("/api/libraries/{library_id}/books", dependencies=[Depends(require_auth)])
 async def books(library_id: str):
     try:
         return await _client().get_library_items(library_id)
@@ -83,7 +100,12 @@ async def books(library_id: str):
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
-@app.post("/api/preview", response_model=list[PreviewItem])
+@app.get("/api/libraries/{library_id}/history", dependencies=[Depends(require_auth)])
+async def history(library_id: str):
+    return await get_renamed_book_ids(library_id)
+
+
+@app.post("/api/preview", response_model=list[PreviewItem], dependencies=[Depends(require_auth)])
 async def preview(req: PreviewRequest):
     if not req.template.strip():
         raise HTTPException(status_code=422, detail="Template must not be empty")
@@ -121,12 +143,11 @@ async def preview(req: PreviewRequest):
     return results
 
 
-@app.post("/api/rename", response_model=RenameResponse)
+@app.post("/api/rename", response_model=RenameResponse, dependencies=[Depends(require_auth)])
 async def rename(req: RenameRequest):
     if not req.template.strip():
         raise HTTPException(status_code=422, detail="Template must not be empty")
 
-    # fetch fresh metadata per library
     library_ids = {item.library_id for item in req.items}
     books_by_id: dict[str, object] = {}
     for lib_id in library_ids:
@@ -171,6 +192,7 @@ async def rename(req: RenameRequest):
         try:
             safe_rename(container_path, proposed_path)
             renamed_library_ids.add(item.library_id)
+            await record_rename(book.id, item.library_id, container_path, proposed_path)
             results.append(
                 RenameResult(
                     book_id=book.id,

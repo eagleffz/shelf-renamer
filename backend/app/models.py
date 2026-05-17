@@ -69,3 +69,7 @@ class RenameResult(BaseModel):
 class RenameResponse(BaseModel):
     results: list[RenameResult]
     scan_triggered: bool
+
+
+class LoginRequest(BaseModel):
+    password: str

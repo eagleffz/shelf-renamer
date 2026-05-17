@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     default_template: str = "{author_lf}/{series}/{series_index_tag} - {title}"
     log_level: str = "INFO"
     debug: bool = False
+    app_password: str = ""
+    db_path: str = "/data/shelf-renamer.db"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
