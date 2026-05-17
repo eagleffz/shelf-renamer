@@ -7,6 +7,7 @@ import type {
   RenameResponse,
 } from './api'
 import {
+  cleanupEmptyDirs,
   clearAuthToken,
   confirmRename,
   fetchBooks,
@@ -49,6 +50,9 @@ export default function App() {
 
   // per-book field overrides for preview
   const [overrides, setOverrides] = useState<Record<string, Record<string, string>>>({})
+
+  const [cleanupWorking, setCleanupWorking] = useState(false)
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null)
 
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([])
   const [renameResponse, setRenameResponse] = useState<RenameResponse | null>(null)
@@ -102,6 +106,23 @@ export default function App() {
       setFilterIds(null)
     } finally {
       setFilterLoading(false)
+    }
+  }
+
+  async function handleCleanup() {
+    setCleanupWorking(true)
+    setCleanupResult(null)
+    try {
+      const { removed } = await cleanupEmptyDirs()
+      setCleanupResult(
+        removed.length
+          ? `Removed ${removed.length} empty folder${removed.length !== 1 ? 's' : ''}`
+          : 'No empty folders found'
+      )
+    } catch {
+      setCleanupResult('Cleanup failed')
+    } finally {
+      setCleanupWorking(false)
     }
   }
 
@@ -271,6 +292,14 @@ export default function App() {
                     : 'Show changes'}
               </button>
               <button
+                className="btn btn-secondary"
+                disabled={cleanupWorking}
+                onClick={handleCleanup}
+                title="Remove empty folders under the media root"
+              >
+                {cleanupWorking ? 'Cleaning…' : 'Clean empty folders'}
+              </button>
+              <button
                 className="btn btn-primary"
                 disabled={!selected.size || working}
                 onClick={handlePreview}
@@ -295,6 +324,11 @@ export default function App() {
       </header>
 
       {error && <div className="error-banner">{error}</div>}
+      {cleanupResult && (
+        <div className="info-banner" onClick={() => setCleanupResult(null)}>
+          {cleanupResult} <span className="info-banner-dismiss">✕</span>
+        </div>
+      )}
 
       <main className="main">
         {phase === 'browse' && (

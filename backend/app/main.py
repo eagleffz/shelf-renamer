@@ -13,6 +13,7 @@ from .auth import init_auth, require_auth, verify_password
 from .config import get_settings
 from .database import get_renamed_book_ids, init_db, record_rename
 from .models import (
+    CleanupResponse,
     LoginRequest,
     PreviewItem,
     PreviewRequest,
@@ -239,6 +240,22 @@ async def rename(req: RenameRequest):
                 scan_triggered = True
 
     return RenameResponse(results=results, scan_triggered=scan_triggered)
+
+
+@app.post("/api/cleanup", response_model=CleanupResponse, dependencies=[Depends(require_auth)])
+async def cleanup_empty_dirs():
+    root = get_settings().media_root
+    removed: list[str] = []
+    for dirpath, _dirnames, _filenames in os.walk(root, topdown=False):
+        if dirpath == root:
+            continue
+        try:
+            if not os.listdir(dirpath):
+                os.rmdir(dirpath)
+                removed.append(os.path.relpath(dirpath, root))
+        except OSError:
+            pass
+    return CleanupResponse(removed=removed)
 
 
 # Serve built frontend — must be last

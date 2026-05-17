@@ -74,3 +74,7 @@ class RenameResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     password: str
+
+
+class CleanupResponse(BaseModel):
+    removed: list[str]

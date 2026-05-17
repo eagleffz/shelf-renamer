@@ -117,3 +117,6 @@ export const confirmRename = (template: string, items: RenameItem[]) =>
     method: 'POST',
     body: JSON.stringify({ template, items, dry_run: false }),
   })
+
+export const cleanupEmptyDirs = () =>
+  request<{ removed: string[] }>('/api/cleanup', { method: 'POST' })
