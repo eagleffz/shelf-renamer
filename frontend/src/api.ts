@@ -129,3 +129,6 @@ export const confirmRename = (template: string, items: RenameItem[]) =>
 
 export const cleanupEmptyDirs = () =>
   request<{ removed: string[] }>('/api/cleanup', { method: 'POST' })
+
+export const scanLibrary = (libraryId: string) =>
+  request<{ triggered: boolean }>(`/api/libraries/${libraryId}/scan`, { method: 'POST' })

@@ -120,6 +120,14 @@ async def books(library_id: str):
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
+@app.post("/api/libraries/{library_id}/scan", dependencies=[Depends(require_auth)])
+async def scan_library(library_id: str):
+    ok = await _client().trigger_scan(library_id)
+    if not ok:
+        raise HTTPException(status_code=502, detail="ABS scan request failed")
+    return {"triggered": True}
+
+
 @app.get("/api/libraries/{library_id}/history", dependencies=[Depends(require_auth)])
 async def history(library_id: str):
     return await get_renamed_book_ids(library_id)

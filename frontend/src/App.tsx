@@ -16,6 +16,7 @@ import {
   getAuthToken,
   login,
   previewRename,
+  scanLibrary,
   setAuthToken,
   setUnauthorizedHandler,
 } from './api'
@@ -57,6 +58,7 @@ export default function App() {
 
   const [cleanupWorking, setCleanupWorking] = useState(false)
   const [cleanupResult, setCleanupResult] = useState<string | null>(null)
+  const [scanWorking, setScanWorking] = useState(false)
 
   const [previewItems, setPreviewItems] = useState<PreviewItem[]>([])
   const [renameResponse, setRenameResponse] = useState<RenameResponse | null>(null)
@@ -132,6 +134,19 @@ export default function App() {
       setFilterIds(null)
     } finally {
       setFilterLoading(false)
+    }
+  }
+
+  async function handleScan() {
+    if (!libraryId) return
+    setScanWorking(true)
+    try {
+      await scanLibrary(libraryId)
+      setCleanupResult('ABS rescan triggered')
+    } catch {
+      setCleanupResult('Rescan request failed')
+    } finally {
+      setScanWorking(false)
     }
   }
 
@@ -330,6 +345,14 @@ export default function App() {
                 title="Remove empty folders under the media root"
               >
                 {cleanupWorking ? 'Cleaning…' : 'Clean empty folders'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={!libraryId || scanWorking}
+                onClick={handleScan}
+                title="Trigger an ABS library rescan"
+              >
+                {scanWorking ? 'Scanning…' : 'Rescan library'}
               </button>
               <button
                 className="btn btn-primary"
