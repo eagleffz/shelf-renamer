@@ -79,12 +79,18 @@ class ABSClient:
         books = []
         for item in items:
             meta = item.get("media", {}).get("metadata", {})
-            authors = [
-                Author(id=a.get("id", ""), name=a.get("name", ""))
-                for a in meta.get("authors", [])
-            ]
-            series_name: str | None = None
-            series_index: float | None = None
+
+            # ABS returns authors as array of {id,name} objects OR as authorName string
+            raw_authors = meta.get("authors", [])
+            if raw_authors:
+                authors = [Author(id=a.get("id", ""), name=a.get("name", "")) for a in raw_authors]
+            elif meta.get("authorName"):
+                authors = [Author(id="", name=meta["authorName"])]
+            else:
+                authors = []
+
+            series_name = None
+            series_index = None
             series_list = meta.get("series", [])
             if series_list:
                 series_name = series_list[0].get("name")
@@ -93,9 +99,12 @@ class ABSClient:
                     series_index = float(seq) if seq else None
                 except (TypeError, ValueError):
                     series_index = None
+            elif meta.get("seriesName"):
+                series_name = meta["seriesName"]
 
+            # narrators: array or narratorName string
             narrators = meta.get("narrators", [])
-            narrator = narrators[0] if narrators else None
+            narrator = narrators[0] if narrators else meta.get("narratorName") or None
 
             books.append(
                 BookMetadata(
