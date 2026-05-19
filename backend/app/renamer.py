@@ -84,11 +84,6 @@ def render_path_template(template: str, book: BookMetadata, library_root: str) -
     if not rendered:
         rendered = [book.title or book.id]
 
-    # file item landing directly at library root → wrap in same-named folder (no extension)
-    if book.is_file and book.file_extension and len(rendered) == 1:
-        base = rendered[0][:-len(book.file_extension)]
-        rendered = [base, rendered[0]]
-
     return os.path.join(library_root, *rendered)
 
 

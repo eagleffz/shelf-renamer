@@ -48,9 +48,10 @@ export default function App() {
   // books that already match the current template (computed in background)
   const [alreadyCorrectIds, setAlreadyCorrectIds] = useState<Set<string>>(new Set())
 
-  // filter: show only books that don't match the template (on by default)
-  const [filterActive, setFilterActive] = useState(true)
+  // filter: show only books that don't match the template
+  const [filterActive, setFilterActive] = useState(false)
   const [filterIds, setFilterIds] = useState<Set<string> | null>(null)
+  const [filterLoading, setFilterLoading] = useState(false)
 
   // per-book field overrides for preview
   const [overrides, setOverrides] = useState<Record<string, Record<string, string>>>({})
@@ -83,6 +84,7 @@ export default function App() {
     if (!libraryId || !authenticated) return
     setLoading(true)
     setSelected(new Set())
+    setFilterActive(false)
     setFilterIds(null)
     Promise.all([fetchBooks(libraryId), fetchHistory(libraryId)])
       .then(([bks, ids]) => {
@@ -104,7 +106,6 @@ export default function App() {
     const items = books.map((b) => ({ book_id: b.id, library_id: b.library_id }))
     const result = await previewRename(template, items)
     setAlreadyCorrectIds(new Set(result.filter((r) => r.no_change).map((r) => r.book_id)))
-    setFilterIds(new Set(result.filter((r) => !r.no_change).map((r) => r.book_id)))
     return result
   }, [books, template])
 
@@ -116,8 +117,24 @@ export default function App() {
     return () => { if (bgTimerRef.current) clearTimeout(bgTimerRef.current) }
   }, [computePreviewAll])
 
-  function toggleFilter() {
-    setFilterActive((v) => !v)
+  async function toggleFilter() {
+    if (filterActive) {
+      setFilterActive(false)
+      setFilterIds(null)
+      return
+    }
+    setFilterLoading(true)
+    setFilterActive(true)
+    try {
+      const result = await computePreviewAll()
+      if (result) setFilterIds(new Set(result.filter((r) => !r.no_change).map((r) => r.book_id)))
+      else { setFilterActive(false); setFilterIds(null) }
+    } catch {
+      setFilterActive(false)
+      setFilterIds(null)
+    } finally {
+      setFilterLoading(false)
+    }
   }
 
   async function handleScan() {
@@ -152,7 +169,10 @@ export default function App() {
 
   function handleTemplateChange(value: string) {
     setTemplate(value)
-    setFilterIds(null)  // background timer will recompute
+    if (filterActive) {
+      setFilterActive(false)
+      setFilterIds(null)
+    }
   }
 
   const displayedBooks = filterActive && filterIds !== null
@@ -308,13 +328,15 @@ export default function App() {
             <>
               <button
                 className={`btn btn-secondary${filterActive ? ' btn-active' : ''}`}
-                disabled={!books.length}
+                disabled={!books.length || filterLoading}
                 onClick={toggleFilter}
-                title={filterActive ? 'Show all books' : 'Show only books whose path doesn\'t match the current template'}
+                title="Show only books whose path doesn't match the current template"
               >
-                {filterActive
-                  ? filterIds !== null ? `Changes only (${filterIds.size})` : 'Changes only'
-                  : filterIds !== null ? `Show all (${books.length})` : 'Show all'}
+                {filterLoading
+                  ? 'Filtering…'
+                  : filterActive && filterIds !== null
+                    ? `Changes only (${filterIds.size})`
+                    : 'Show changes'}
               </button>
               <button
                 className="btn btn-secondary"
