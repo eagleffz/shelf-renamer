@@ -97,6 +97,16 @@ def test_file_item_extension_only_on_last_segment():
     assert not parts[-2].endswith(".m4b")
 
 
+def test_file_item_at_root_wrapped_in_folder():
+    # file with no metadata → would land at root → must get its own folder
+    book = _book(is_file=True, file_extension=".mp3", authors=[], series=None, series_index=None)
+    result = rpt("{author}/{series}/{title}", book)
+    parts = result.split("/")
+    # last part is filename with extension, second-to-last is folder without extension
+    assert parts[-1] == "Guards! Guards!.mp3"
+    assert parts[-2] == "Guards! Guards!"
+
+
 def test_sanitize_forbidden_chars():
     assert "/" not in sanitize_filename("AC/DC: Live")
     assert ":" not in sanitize_filename("AC/DC: Live")
