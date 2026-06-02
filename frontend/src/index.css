@@ -279,6 +279,9 @@ tr.drag-over { background: rgba(99, 102, 241, 0.08); outline: 1px dashed var(--p
 .batch-save-result { font-size: 13px; margin-left: 8px; }
 .result-ok { color: var(--success); }
 .result-error { color: var(--conflict); }
+.row-other { opacity: 0.5; }
+.row-other:hover { opacity: 0.85; }
+.series-divider-row td { text-align: center; font-size: 11px; color: var(--text-muted); padding: 4px; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border); }
 .sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
 .sortable-th:hover { color: var(--primary); }
 .sort-icon { margin-left: 4px; font-size: 11px; }

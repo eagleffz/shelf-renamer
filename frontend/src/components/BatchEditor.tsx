@@ -17,6 +17,7 @@ interface Row {
   abs_library_root: string
   sequence: string
   originalSequence: string
+  inSeries: boolean
 }
 
 type SortCol = 'title' | 'year' | 'sequence'
@@ -63,25 +64,34 @@ export function BatchEditor({ books, loading }: Props) {
     setSelectedSeries(name)
     setSaveResult(null)
     setSortCol(null)
-    const filtered = books
-      .filter((b) => b.series?.trim() === name)
-      .sort((a, b) => {
+    const nameLower = name.toLowerCase()
+    // Sort: series books with number first, series books without number next, other books last
+    const sorted = [...books].sort((a, b) => {
+      const aInSeries = a.series?.trim().toLowerCase() === nameLower
+      const bInSeries = b.series?.trim().toLowerCase() === nameLower
+      if (aInSeries !== bInSeries) return aInSeries ? -1 : 1
+      if (aInSeries && bInSeries) {
         if (a.series_index !== null && b.series_index !== null) return a.series_index - b.series_index
         if (a.series_index !== null) return -1
         if (b.series_index !== null) return 1
-        return a.title.localeCompare(b.title)
-      })
-    setRows(filtered.map((b) => ({
-      book_id: b.id,
-      series_id: b.series_id,
-      series_name: b.series!,
-      title: b.title,
-      published_year: b.published_year,
-      abs_path: b.abs_path,
-      abs_library_root: b.abs_library_root,
-      sequence: seqString(b.series_index),
-      originalSequence: seqString(b.series_index),
-    })))
+      }
+      return a.title.localeCompare(b.title)
+    })
+    setRows(sorted.map((b) => {
+      const inSeries = b.series?.trim().toLowerCase() === nameLower
+      return {
+        book_id: b.id,
+        series_id: inSeries ? b.series_id : null,
+        series_name: inSeries ? b.series! : name,
+        title: b.title,
+        published_year: b.published_year,
+        abs_path: b.abs_path,
+        abs_library_root: b.abs_library_root,
+        sequence: inSeries ? seqString(b.series_index) : '',
+        originalSequence: inSeries ? seqString(b.series_index) : '',
+        inSeries,
+      }
+    }))
   }
 
   function handleSort(col: SortCol) {
@@ -107,7 +117,8 @@ export function BatchEditor({ books, loading }: Props) {
   }
 
   function autoNumber() {
-    setRows((prev) => prev.map((r, i) => ({ ...r, sequence: String(i + 1) })))
+    let n = 0
+    setRows((prev) => prev.map((r) => r.inSeries ? { ...r, sequence: String(++n) } : r))
   }
 
   function handleDragStart(e: React.DragEvent, i: number) {
@@ -231,7 +242,15 @@ export function BatchEditor({ books, loading }: Props) {
             <tbody>
               {rows.map((row, i) => {
                 const changed = row.sequence.trim() !== row.originalSequence
+                const prevInSeries = i > 0 && rows[i - 1].inSeries
+                const showDivider = !row.inSeries && prevInSeries
                 return (
+                  <>
+                    {showDivider && (
+                      <tr key={`div-${row.book_id}`} className="series-divider-row">
+                        <td colSpan={6}>— other books in library —</td>
+                      </tr>
+                    )}
                   <tr
                     key={row.book_id}
                     draggable
@@ -239,7 +258,7 @@ export function BatchEditor({ books, loading }: Props) {
                     onDragOver={(e) => handleDragOver(e, i)}
                     onDrop={(e) => handleDrop(e, i)}
                     onDragEnd={handleDragEnd}
-                    className={dragOver === i ? 'drag-over' : ''}
+                    className={`${dragOver === i ? 'drag-over' : ''}${!row.inSeries ? ' row-other' : ''}`}
                     style={{ opacity: dragIndexRef.current === i ? 0.4 : 1 }}
                   >
                     <td className="drag-handle" title="Drag to reorder">⠿</td>
@@ -260,6 +279,7 @@ export function BatchEditor({ books, loading }: Props) {
                       {relPath(row.abs_path, row.abs_library_root)}
                     </td>
                   </tr>
+                  </>
                 )
               })}
             </tbody>
