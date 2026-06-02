@@ -28,6 +28,11 @@ function seqString(index: number | null): string {
   return index === Math.floor(index) ? String(Math.floor(index)) : String(index)
 }
 
+// Strip trailing " #N" or " #N.N" that ABS sometimes embeds in the series name field
+function normalizeSeriesName(s: string): string {
+  return s.trim().replace(/\s*#\d+(\.\d+)?\s*$/, '').trim()
+}
+
 function relPath(abs_path: string, abs_library_root: string): string {
   if (abs_path.startsWith(abs_library_root)) {
     return abs_path.slice(abs_library_root.length).replace(/^\//, '')
@@ -42,8 +47,8 @@ function seqSortVal(s: string): number {
 
 export function BatchEditor({ books, loading }: Props) {
   const seriesMap = books.filter((b) => b.series).reduce<Record<string, number>>((acc, b) => {
-    const key = b.series!.trim()
-    acc[key] = (acc[key] ?? 0) + 1
+    const key = normalizeSeriesName(b.series!)
+    if (key) acc[key] = (acc[key] ?? 0) + 1
     return acc
   }, {})
   const seriesList = Object.entries(seriesMap)
@@ -67,8 +72,8 @@ export function BatchEditor({ books, loading }: Props) {
     const nameLower = name.toLowerCase()
     // Sort: series books with number first, series books without number next, other books last
     const sorted = [...books].sort((a, b) => {
-      const aInSeries = a.series?.trim().toLowerCase() === nameLower
-      const bInSeries = b.series?.trim().toLowerCase() === nameLower
+      const aInSeries = normalizeSeriesName(a.series ?? '').toLowerCase() === nameLower
+      const bInSeries = normalizeSeriesName(b.series ?? '').toLowerCase() === nameLower
       if (aInSeries !== bInSeries) return aInSeries ? -1 : 1
       if (aInSeries && bInSeries) {
         if (a.series_index !== null && b.series_index !== null) return a.series_index - b.series_index
@@ -78,11 +83,12 @@ export function BatchEditor({ books, loading }: Props) {
       return a.title.localeCompare(b.title)
     })
     setRows(sorted.map((b) => {
-      const inSeries = b.series?.trim().toLowerCase() === nameLower
+      const inSeries = normalizeSeriesName(b.series ?? '').toLowerCase() === nameLower
       return {
         book_id: b.id,
-        series_id: inSeries ? b.series_id : null,
-        series_name: inSeries ? b.series! : name,
+        // Use null ID so ABS looks up/creates by clean name, not by stale per-book ID
+        series_id: null,
+        series_name: name,  // always the normalized clean name
         title: b.title,
         published_year: b.published_year,
         abs_path: b.abs_path,
