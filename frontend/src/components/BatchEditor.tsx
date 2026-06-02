@@ -40,15 +40,15 @@ function seqSortVal(s: string): number {
 }
 
 export function BatchEditor({ books, loading }: Props) {
-  const seriesList = Object.entries(
-    books.filter((b) => b.series).reduce<Record<string, number>>((acc, b) => {
-      acc[b.series!] = (acc[b.series!] ?? 0) + 1
-      return acc
-    }, {})
-  )
+  const seriesMap = books.filter((b) => b.series).reduce<Record<string, number>>((acc, b) => {
+    const key = b.series!.trim()
+    acc[key] = (acc[key] ?? 0) + 1
+    return acc
+  }, {})
+  const seriesList = Object.entries(seriesMap)
     .filter(([, count]) => count >= 2)
-    .map(([name]) => name)
-    .sort()
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   const [selectedSeries, setSelectedSeries] = useState('')
   const [rows, setRows] = useState<Row[]>([])
@@ -65,7 +65,7 @@ export function BatchEditor({ books, loading }: Props) {
     setSaveResult(null)
     setSortCol(null)
     const filtered = books
-      .filter((b) => b.series === name)
+      .filter((b) => b.series?.trim() === name)
       .sort((a, b) => {
         if (a.series_index !== null && b.series_index !== null) return a.series_index - b.series_index
         if (a.series_index !== null) return -1
@@ -182,8 +182,8 @@ export function BatchEditor({ books, loading }: Props) {
           onChange={(e) => selectSeries(e.target.value)}
         >
           <option value="">— Select a series —</option>
-          {seriesList.map((s) => (
-            <option key={s} value={s}>{s}</option>
+          {seriesList.map(({ name, count }) => (
+            <option key={name} value={name}>{name} ({count})</option>
           ))}
         </select>
 
