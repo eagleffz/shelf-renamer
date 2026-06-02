@@ -20,6 +20,7 @@ import {
   scanLibrary,
   setAuthToken,
   setUnauthorizedHandler,
+  verifyBooks,
 } from './api'
 import { BookTable } from './components/BookTable'
 import { LibrarySelector } from './components/LibrarySelector'
@@ -58,6 +59,9 @@ export default function App() {
 
   // set to true after a library load to auto-activate filter once preview is ready
   const autoFilterRef = useRef(false)
+  // stable refs to avoid adding renamedIds/libraryId as computePreviewAll deps
+  const renamedIdsRef = useRef(new Set<string>())
+  const libraryIdRef = useRef('')
 
   // per-book field overrides for preview
   const [overrides, setOverrides] = useState<Record<string, Record<string, string>>>({})
@@ -72,6 +76,9 @@ export default function App() {
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
   const [showVarHelp, setShowVarHelp] = useState(false)
+
+  useEffect(() => { renamedIdsRef.current = renamedIds }, [renamedIds])
+  useEffect(() => { libraryIdRef.current = libraryId }, [libraryId])
 
   useEffect(() => {
     setUnauthorizedHandler(() => setAuthenticated(false))
@@ -116,6 +123,19 @@ export default function App() {
     const result = await previewRename(template, items)
     setAlreadyCorrectIds(new Set(result.filter((r) => r.no_change).map((r) => r.book_id)))
     setPreviewReady(true)
+
+    // Persist books already in correct location to rename history
+    const toVerify = result.filter((r) => r.no_change && !renamedIdsRef.current.has(r.book_id))
+    if (toVerify.length && libraryIdRef.current) {
+      verifyBooks(libraryIdRef.current, toVerify.map((r) => ({
+        book_id: r.book_id,
+        library_id: r.library_id,
+        current_path: r.current_path,
+      }))).then(() => {
+        setRenamedIds((prev) => new Set([...prev, ...toVerify.map((r) => r.book_id)]))
+      }).catch(() => {})
+    }
+
     if (autoFilterRef.current) {
       autoFilterRef.current = false
       setFilterActive(true)
@@ -207,9 +227,11 @@ export default function App() {
   }
 
   const changesCount = books.filter((b) => !alreadyCorrectIds.has(b.id)).length
-  const displayedBooks = filterActive
+  const isDone = (id: string) => renamedIds.has(id) || alreadyCorrectIds.has(id)
+  const displayedBooks = (filterActive
     ? books.filter((b) => !alreadyCorrectIds.has(b.id))
     : books
+  ).sort((a, b) => (isDone(a.id) ? 1 : 0) - (isDone(b.id) ? 1 : 0))
 
   function toggleBook(id: string) {
     setSelected((prev) => {

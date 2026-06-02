@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .abs_client import ABSClient, ABSClientError
 from .auth import init_auth, require_auth, verify_password
 from .config import get_settings
-from .database import clear_library_history, get_renamed_book_ids, init_db, record_rename
+from .database import clear_library_history, get_renamed_book_ids, init_db, mark_books_verified, record_rename
 from .models import (
     BookMetadata,
     CleanupResponse,
@@ -21,6 +21,7 @@ from .models import (
     RenameRequest,
     RenameResponse,
     RenameResult,
+    VerifyRequest,
 )
 from .renamer import render_path_template, safe_rename, RenameError
 
@@ -138,6 +139,13 @@ async def history(library_id: str):
 async def delete_history(library_id: str):
     cleared = await clear_library_history(library_id)
     return {"cleared": cleared}
+
+
+@app.post("/api/libraries/{library_id}/verify", dependencies=[Depends(require_auth)])
+async def verify_books(library_id: str, req: VerifyRequest):
+    entries = [(item.book_id, item.library_id, item.current_path) for item in req.items]
+    await mark_books_verified(entries)
+    return {"marked": len(entries)}
 
 
 @app.post("/api/preview", response_model=list[PreviewItem], dependencies=[Depends(require_auth)])

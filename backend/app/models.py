@@ -72,6 +72,16 @@ class RenameResponse(BaseModel):
     scan_triggered: bool
 
 
+class VerifyItem(BaseModel):
+    book_id: str
+    library_id: str
+    current_path: str
+
+
+class VerifyRequest(BaseModel):
+    items: list[VerifyItem]
+
+
 class LoginRequest(BaseModel):
     password: str
 

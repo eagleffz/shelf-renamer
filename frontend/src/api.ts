@@ -135,3 +135,12 @@ export const scanLibrary = (libraryId: string) =>
 
 export const clearHistory = (libraryId: string) =>
   request<{ cleared: number }>(`/api/libraries/${libraryId}/history`, { method: 'DELETE' })
+
+export const verifyBooks = (
+  libraryId: string,
+  items: { book_id: string; library_id: string; current_path: string }[],
+) =>
+  request<{ marked: number }>(`/api/libraries/${libraryId}/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })

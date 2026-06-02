@@ -41,6 +41,16 @@ async def get_renamed_book_ids(library_id: str) -> list[str]:
     return [row[0] for row in rows]
 
 
+async def mark_books_verified(entries: list[tuple[str, str, str]]) -> None:
+    """Record books already in correct location (old_path == new_path)."""
+    async with aiosqlite.connect(get_settings().db_path) as db:
+        await db.executemany(
+            "INSERT INTO rename_history (book_id, library_id, old_path, new_path) VALUES (?, ?, ?, ?)",
+            [(bid, lid, path, path) for bid, lid, path in entries],
+        )
+        await db.commit()
+
+
 async def clear_library_history(library_id: str) -> int:
     async with aiosqlite.connect(get_settings().db_path) as db:
         cursor = await db.execute(

@@ -8,8 +8,10 @@ Web app for clean file-level renaming of audiobooks in [Audiobookshelf](https://
 - Configurable naming template with live preview (e.g. `{author_lf}/{series}/{series_index_tag} - {title}`)
 - Folder breadcrumb diff view before any changes — conflict detection included
 - Rename history tracked in SQLite — books renamed before get a ✓ indicator; history clearable per library
-- On library load, filter auto-activates to show only books that need renaming
+- On library load, filter auto-activates to show only books that need renaming; done books sorted to the bottom
+- Books already in the correct location are automatically marked as done and persisted to history
 - Single-file items (`.m4b`, `.mp3`, etc.) always placed in a subfolder — never left bare in the library root
+- "root" badge in the book list flags file items sitting directly in the library root
 - Optional password protection via `APP_PASSWORD`
 - Atomic folder renames on the mounted filesystem
 - Triggers ABS library re-scan after rename
@@ -173,6 +175,7 @@ All endpoints prefixed with `/api`. Endpoints marked 🔒 require `Authorization
 | `GET` | `/api/libraries/{id}/books` | 🔒 | Books in a library |
 | `GET` | `/api/libraries/{id}/history` | 🔒 | Book IDs previously renamed in this library |
 | `DELETE` | `/api/libraries/{id}/history` | 🔒 | Clear rename history for a library |
+| `POST` | `/api/libraries/{id}/verify` | 🔒 | Mark books already in correct location as done |
 | `POST` | `/api/preview` | 🔒 | Preview renames (no filesystem write) |
 | `POST` | `/api/rename` | 🔒 | Execute renames + trigger ABS scan |
 
