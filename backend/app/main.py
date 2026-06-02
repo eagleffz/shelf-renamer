@@ -74,6 +74,16 @@ def _apply_overrides(book: BookMetadata, overrides: dict | None) -> BookMetadata
     return BookMetadata(**data)
 
 
+def _container_root_for(abs_path: str) -> str:
+    """Return the container mount-point root that owns abs_path."""
+    settings = get_settings()
+    volume_map = sorted(settings.parsed_volume_map(), key=lambda x: len(x[0]), reverse=True)
+    for abs_root, container_root in volume_map:
+        if abs_path == abs_root or abs_path.startswith(abs_root + "/"):
+            return container_root
+    return settings.media_root
+
+
 def _container_path(abs_path: str, abs_library_root: str) -> str:
     settings = get_settings()
     # Try explicit VOLUME_MAP entries first (longest match wins)
@@ -180,7 +190,6 @@ async def preview(req: PreviewRequest):
 
     book_map = {b.id: b for b in books}
     results: list[PreviewItem] = []
-    lib_root = get_settings().media_root
 
     for item in req.items:
         book = book_map.get(item["book_id"])
@@ -188,6 +197,7 @@ async def preview(req: PreviewRequest):
             continue
         book = _apply_overrides(book, item.get("overrides"))
         container_path = _container_path(book.abs_path, book.abs_library_root)
+        lib_root = _container_root_for(book.abs_path)
         proposed_path = render_path_template(req.template, book, lib_root)
         current_name = os.path.relpath(container_path, lib_root)
         proposed_name = os.path.relpath(proposed_path, lib_root)
@@ -242,7 +252,7 @@ async def rename(req: RenameRequest):
 
         book = _apply_overrides(book, item.overrides)
         container_path = _container_path(book.abs_path, book.abs_library_root)
-        proposed_path = render_path_template(req.template, book, get_settings().media_root)
+        proposed_path = render_path_template(req.template, book, _container_root_for(book.abs_path))
 
         if req.dry_run or container_path == proposed_path:
             results.append(
