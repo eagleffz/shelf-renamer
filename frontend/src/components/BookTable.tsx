@@ -53,6 +53,10 @@ export function BookTable({ books, selected, renamedIds, alreadyCorrectIds, absU
             const itemName = book.abs_path.split('/').at(-1) ?? book.abs_path
             const wasRenamed = renamedIds.has(book.id)
             const isCorrect = alreadyCorrectIds.has(book.id)
+            const rel = book.abs_path.startsWith(book.abs_library_root)
+              ? book.abs_path.slice(book.abs_library_root.length).replace(/^\//, '')
+              : book.abs_path
+            const isAtRoot = book.is_file && !rel.includes('/')
             return (
               <tr
                 key={book.id}
@@ -70,6 +74,11 @@ export function BookTable({ books, selected, renamedIds, alreadyCorrectIds, absU
                   <span className={`badge ${book.is_file ? 'badge-file' : 'badge-folder'}`}>
                     {book.is_file ? book.file_extension.replace('.', '').toUpperCase() : 'folder'}
                   </span>
+                  {isAtRoot && (
+                    <span className="badge badge-root" title="File is directly in library root — not in a subfolder">
+                      root
+                    </span>
+                  )}
                   {(wasRenamed || isCorrect) && (
                     <span
                       className="badge badge-renamed"
