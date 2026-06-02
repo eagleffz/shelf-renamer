@@ -89,6 +89,18 @@ def test_file_item_extension_appended():
     assert result == "/media/Terry Pratchett/Guards! Guards!.m4b"
 
 
+def test_file_item_single_segment_gets_subfolder():
+    book = _book(is_file=True, file_extension=".m4b")
+    result = rpt("{title}", book)
+    assert result == "/media/Guards! Guards!/Guards! Guards!.m4b"
+
+
+def test_file_item_series_drops_to_single_segment_gets_subfolder():
+    book = _book(is_file=True, file_extension=".m4b", series=None, series_index=None)
+    result = rpt("{series}/{title}", book)
+    assert result == "/media/Guards! Guards!/Guards! Guards!.m4b"
+
+
 def test_file_item_extension_only_on_last_segment():
     book = _book(is_file=True, file_extension=".m4b")
     result = rpt("{author}/{series}/{title}", book)

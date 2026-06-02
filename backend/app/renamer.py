@@ -82,7 +82,19 @@ def render_path_template(template: str, book: BookMetadata, library_root: str) -
         rendered.append(part)
 
     if not rendered:
-        rendered = [book.title or book.id]
+        fallback = sanitize_filename(book.title or book.id)
+        if book.is_file and book.file_extension:
+            rendered = [fallback, fallback + book.file_extension]
+        else:
+            rendered = [fallback]
+
+    # File items must always reside in a subfolder, never directly in library_root
+    if book.is_file and len(rendered) == 1:
+        filename = rendered[0]
+        ext = book.file_extension
+        folder = filename[: -len(ext)] if ext and filename.endswith(ext) else filename
+        folder = folder.strip(" .-") or sanitize_filename(book.title or book.id)
+        rendered = [folder, filename]
 
     return os.path.join(library_root, *rendered)
 

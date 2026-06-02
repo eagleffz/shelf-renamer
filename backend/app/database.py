@@ -39,3 +39,13 @@ async def get_renamed_book_ids(library_id: str) -> list[str]:
         ) as cursor:
             rows = await cursor.fetchall()
     return [row[0] for row in rows]
+
+
+async def clear_library_history(library_id: str) -> int:
+    async with aiosqlite.connect(get_settings().db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM rename_history WHERE library_id = ?",
+            (library_id,),
+        )
+        await db.commit()
+        return cursor.rowcount

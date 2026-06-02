@@ -9,6 +9,7 @@ import type {
 import {
   cleanupEmptyDirs,
   clearAuthToken,
+  clearHistory,
   confirmRename,
   fetchBooks,
   fetchConfig,
@@ -47,15 +48,20 @@ export default function App() {
 
   // books that already match the current template (computed in background)
   const [alreadyCorrectIds, setAlreadyCorrectIds] = useState<Set<string>>(new Set())
+  // true once alreadyCorrectIds is fresh for the current books+template
+  const [previewReady, setPreviewReady] = useState(false)
 
   // filter: show only books that don't match the template
   const [filterActive, setFilterActive] = useState(false)
-  const [filterIds, setFilterIds] = useState<Set<string> | null>(null)
   const [filterLoading, setFilterLoading] = useState(false)
+
+  // set to true after a library load to auto-activate filter once preview is ready
+  const autoFilterRef = useRef(false)
 
   // per-book field overrides for preview
   const [overrides, setOverrides] = useState<Record<string, Record<string, string>>>({})
 
+  const [clearingHistory, setClearingHistory] = useState(false)
   const [cleanupWorking, setCleanupWorking] = useState(false)
   const [cleanupResult, setCleanupResult] = useState<string | null>(null)
   const [scanWorking, setScanWorking] = useState(false)
@@ -85,11 +91,13 @@ export default function App() {
     setLoading(true)
     setSelected(new Set())
     setFilterActive(false)
-    setFilterIds(null)
+    setPreviewReady(false)
+    setAlreadyCorrectIds(new Set())
     Promise.all([fetchBooks(libraryId), fetchHistory(libraryId)])
       .then(([bks, ids]) => {
         setBooks(bks)
         setRenamedIds(new Set(ids))
+        autoFilterRef.current = true
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
@@ -106,6 +114,11 @@ export default function App() {
     const items = books.map((b) => ({ book_id: b.id, library_id: b.library_id }))
     const result = await previewRename(template, items)
     setAlreadyCorrectIds(new Set(result.filter((r) => r.no_change).map((r) => r.book_id)))
+    setPreviewReady(true)
+    if (autoFilterRef.current) {
+      autoFilterRef.current = false
+      setFilterActive(true)
+    }
     return result
   }, [books, template])
 
@@ -120,20 +133,37 @@ export default function App() {
   async function toggleFilter() {
     if (filterActive) {
       setFilterActive(false)
-      setFilterIds(null)
       return
     }
-    setFilterLoading(true)
     setFilterActive(true)
+    if (!previewReady) {
+      // Cancel pending debounce and run immediately so filter reflects current template
+      if (bgTimerRef.current) {
+        clearTimeout(bgTimerRef.current)
+        bgTimerRef.current = null
+      }
+      setFilterLoading(true)
+      try {
+        await computePreviewAll()
+      } catch {
+        setFilterActive(false)
+      } finally {
+        setFilterLoading(false)
+      }
+    }
+  }
+
+  async function handleClearHistory() {
+    if (!libraryId) return
+    setClearingHistory(true)
     try {
-      const result = await computePreviewAll()
-      if (result) setFilterIds(new Set(result.filter((r) => !r.no_change).map((r) => r.book_id)))
-      else { setFilterActive(false); setFilterIds(null) }
+      await clearHistory(libraryId)
+      setRenamedIds(new Set())
+      setCleanupResult('Rename history cleared')
     } catch {
-      setFilterActive(false)
-      setFilterIds(null)
+      setCleanupResult('Failed to clear history')
     } finally {
-      setFilterLoading(false)
+      setClearingHistory(false)
     }
   }
 
@@ -169,14 +199,15 @@ export default function App() {
 
   function handleTemplateChange(value: string) {
     setTemplate(value)
+    setPreviewReady(false)
     if (filterActive) {
       setFilterActive(false)
-      setFilterIds(null)
     }
   }
 
-  const displayedBooks = filterActive && filterIds !== null
-    ? books.filter((b) => filterIds.has(b.id))
+  const changesCount = books.filter((b) => !alreadyCorrectIds.has(b.id)).length
+  const displayedBooks = filterActive
+    ? books.filter((b) => !alreadyCorrectIds.has(b.id))
     : books
 
   function toggleBook(id: string) {
@@ -334,9 +365,17 @@ export default function App() {
               >
                 {filterLoading
                   ? 'Filtering…'
-                  : filterActive && filterIds !== null
-                    ? `Changes only (${filterIds.size})`
+                  : filterActive
+                    ? `Changes only (${changesCount})`
                     : 'Show changes'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={!libraryId || clearingHistory || !renamedIds.size}
+                onClick={handleClearHistory}
+                title="Clear rename history for this library"
+              >
+                {clearingHistory ? 'Clearing…' : 'Clear history'}
               </button>
               <button
                 className="btn btn-secondary"

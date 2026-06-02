@@ -11,8 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from .abs_client import ABSClient, ABSClientError
 from .auth import init_auth, require_auth, verify_password
 from .config import get_settings
-from .database import get_renamed_book_ids, init_db, record_rename
+from .database import clear_library_history, get_renamed_book_ids, init_db, record_rename
 from .models import (
+    BookMetadata,
     CleanupResponse,
     LoginRequest,
     PreviewItem,
@@ -131,6 +132,12 @@ async def scan_library(library_id: str):
 @app.get("/api/libraries/{library_id}/history", dependencies=[Depends(require_auth)])
 async def history(library_id: str):
     return await get_renamed_book_ids(library_id)
+
+
+@app.delete("/api/libraries/{library_id}/history", dependencies=[Depends(require_auth)])
+async def delete_history(library_id: str):
+    cleared = await clear_library_history(library_id)
+    return {"cleared": cleared}
 
 
 @app.post("/api/preview", response_model=list[PreviewItem], dependencies=[Depends(require_auth)])

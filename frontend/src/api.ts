@@ -132,3 +132,6 @@ export const cleanupEmptyDirs = () =>
 
 export const scanLibrary = (libraryId: string) =>
   request<{ triggered: boolean }>(`/api/libraries/${libraryId}/scan`, { method: 'POST' })
+
+export const clearHistory = (libraryId: string) =>
+  request<{ cleared: number }>(`/api/libraries/${libraryId}/history`, { method: 'DELETE' })
