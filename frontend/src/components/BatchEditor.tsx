@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { BookMetadata } from '../api'
 import { batchUpdateSeries } from '../api'
 
 interface Props {
   books: BookMetadata[]
   loading: boolean
+  libraryId: string
 }
 
 interface Row {
@@ -17,7 +18,6 @@ interface Row {
   abs_library_root: string
   sequence: string
   originalSequence: string
-  inSeries: boolean
 }
 
 type SortCol = 'title' | 'year' | 'sequence'
@@ -28,19 +28,16 @@ function seqString(index: number | null): string {
   return index === Math.floor(index) ? String(Math.floor(index)) : String(index)
 }
 
-// Strip trailing " #N" or " #N.N" that ABS sometimes embeds in the series name field
 function normalizeSeriesName(s: string): string {
   return s.trim().replace(/\s*#\d+(\.\d+)?\s*$/, '').trim()
 }
 
-// Extract the number from an embedded series name like "Bobiverse #3" → "3"
 function indexFromName(name: string | null): string {
   if (!name) return ''
   const m = name.match(/#(\d+(?:\.\d+)?)\s*$/)
   return m ? m[1] : ''
 }
 
-// Return sequence string: prefer parsed series_index, fall back to embedded name
 function resolveSeq(index: number | null, seriesName: string | null): string {
   if (index !== null) return seqString(index)
   return indexFromName(seriesName)
@@ -58,7 +55,7 @@ function seqSortVal(s: string): number {
   return isNaN(n) ? Infinity : n
 }
 
-export function BatchEditor({ books, loading }: Props) {
+export function BatchEditor({ books, loading, libraryId }: Props) {
   const seriesMap = books.filter((b) => b.series).reduce<Record<string, number>>((acc, b) => {
     const key = normalizeSeriesName(b.series!)
     if (key) acc[key] = (acc[key] ?? 0) + 1
@@ -75,8 +72,13 @@ export function BatchEditor({ books, loading }: Props) {
   const [sortCol, setSortCol] = useState<SortCol | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
-  const dragIndexRef = useRef<number | null>(null)
-  const [dragOver, setDragOver] = useState<number | null>(null)
+  // Clear editor when library changes
+  useEffect(() => {
+    setSelectedSeries('')
+    setRows([])
+    setSaveResult(null)
+    setSortCol(null)
+  }, [libraryId])
 
   function selectSeries(name: string) {
     setSelectedSeries(name)
@@ -103,7 +105,6 @@ export function BatchEditor({ books, loading }: Props) {
       abs_library_root: b.abs_library_root,
       sequence: resolveSeq(b.series_index, b.series),
       originalSequence: resolveSeq(b.series_index, b.series),
-      inSeries: true,
     })))
   }
 
@@ -131,37 +132,7 @@ export function BatchEditor({ books, loading }: Props) {
 
   function autoNumber() {
     let n = 0
-    setRows((prev) => prev.map((r) => r.inSeries ? { ...r, sequence: String(++n) } : r))
-  }
-
-  function handleDragStart(e: React.DragEvent, i: number) {
-    dragIndexRef.current = i
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  function handleDragOver(e: React.DragEvent, i: number) {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    setDragOver(i)
-  }
-
-  function handleDrop(e: React.DragEvent, i: number) {
-    e.preventDefault()
-    const from = dragIndexRef.current
-    if (from === null || from === i) { setDragOver(null); return }
-    setRows((prev) => {
-      const next = [...prev]
-      const [item] = next.splice(from, 1)
-      next.splice(i, 0, item)
-      return next
-    })
-    dragIndexRef.current = null
-    setDragOver(null)
-  }
-
-  function handleDragEnd() {
-    dragIndexRef.current = null
-    setDragOver(null)
+    setRows((prev) => prev.map((r) => ({ ...r, sequence: String(++n) })))
   }
 
   async function handleSave() {
@@ -238,7 +209,6 @@ export function BatchEditor({ books, loading }: Props) {
           <table className="book-table">
             <thead>
               <tr>
-                <th style={{ width: 28 }}></th>
                 <th className="sortable-th" onClick={() => handleSort('sequence')}>
                   # {sortIcon('sequence')}
                 </th>
@@ -256,17 +226,7 @@ export function BatchEditor({ books, loading }: Props) {
               {rows.map((row, i) => {
                 const changed = row.sequence.trim() !== row.originalSequence
                 return (
-                  <tr
-                    key={row.book_id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, i)}
-                    onDragOver={(e) => handleDragOver(e, i)}
-                    onDrop={(e) => handleDrop(e, i)}
-                    onDragEnd={handleDragEnd}
-                    className={dragOver === i ? 'drag-over' : ''}
-                    style={{ opacity: dragIndexRef.current === i ? 0.4 : 1 }}
-                  >
-                    <td className="drag-handle" title="Drag to reorder">⠿</td>
+                  <tr key={row.book_id}>
                     <td>
                       <input
                         className={`seq-input${changed ? ' seq-changed' : ''}`}

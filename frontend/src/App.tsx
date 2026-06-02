@@ -469,7 +469,7 @@ export default function App() {
 
       <main className="main">
         {tab === 'batch' && (
-          <BatchEditor books={books} loading={loading} />
+          <BatchEditor books={books} loading={loading} libraryId={libraryId} />
         )}
         {tab === 'library' && phase === 'browse' && (
           <BookTable
