@@ -24,6 +24,7 @@ import {
 } from './api'
 import { BatchEditor } from './components/BatchEditor'
 import { BookTable } from './components/BookTable'
+import { ConfigTab } from './components/ConfigTab'
 import { LibrarySelector } from './components/LibrarySelector'
 import { LoginPage } from './components/LoginPage'
 import { PreviewTable } from './components/PreviewTable'
@@ -31,7 +32,7 @@ import { ResultsPane } from './components/ResultsPane'
 import './index.css'
 
 type Phase = 'browse' | 'preview' | 'results'
-type Tab = 'library' | 'batch'
+type Tab = 'library' | 'batch' | 'config'
 
 const TEMPLATE_VARS = [
   '{title}', '{author}', '{author_lf}', '{authors}',
@@ -458,6 +459,12 @@ export default function App() {
         >
           Batch Editor
         </button>
+        <button
+          className={`tab-btn${tab === 'config' ? ' tab-active' : ''}`}
+          onClick={() => setTab('config')}
+        >
+          Config
+        </button>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -470,6 +477,9 @@ export default function App() {
       <main className="main">
         {tab === 'batch' && (
           <BatchEditor books={books} loading={loading} libraryId={libraryId} />
+        )}
+        {tab === 'config' && config && (
+          <ConfigTab config={config} />
         )}
         {tab === 'library' && phase === 'browse' && (
           <BookTable

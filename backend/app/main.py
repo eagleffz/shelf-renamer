@@ -99,11 +99,14 @@ async def health():
 @app.get("/api/config")
 async def config():
     s = get_settings()
+    volume_map = s.parsed_volume_map()
     return {
         "default_template": s.default_template,
         "auth_required": bool(s.app_password),
         "version": s.app_version,
         "abs_url": s.abs_url,
+        "media_root": s.media_root,
+        "volume_map": [{"abs_root": a, "container_root": c} for a, c in volume_map],
     }
 
 

@@ -56,11 +56,18 @@ export interface RenameResponse {
   scan_triggered: boolean
 }
 
+export interface VolumeMapEntry {
+  abs_root: string
+  container_root: string
+}
+
 export interface AppConfig {
   default_template: string
   auth_required: boolean
   version: string
   abs_url: string
+  media_root: string
+  volume_map: VolumeMapEntry[]
 }
 
 const TOKEN_KEY = 'shelf-renamer-token'
