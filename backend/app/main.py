@@ -76,6 +76,13 @@ def _apply_overrides(book: BookMetadata, overrides: dict | None) -> BookMetadata
 
 def _container_path(abs_path: str, abs_library_root: str) -> str:
     settings = get_settings()
+    # Try explicit VOLUME_MAP entries first (longest match wins)
+    volume_map = sorted(settings.parsed_volume_map(), key=lambda x: len(x[0]), reverse=True)
+    for abs_root, container_root in volume_map:
+        if abs_path == abs_root or abs_path.startswith(abs_root + "/"):
+            rel = os.path.relpath(abs_path, abs_root)
+            return os.path.join(container_root, rel)
+    # Fallback: replace abs_library_root with media_root (original behaviour)
     try:
         rel = os.path.relpath(abs_path, abs_library_root)
     except ValueError:

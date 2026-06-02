@@ -11,8 +11,15 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_PASSWORD: ${APP_PASSWORD:-}
       DB_PATH: /data/shelf-renamer.db
+      # Optional: map additional ABS library roots to extra container mount points.
+      # Format: ABS_HOST_PATH=CONTAINER_PATH pairs, comma-separated.
+      # Example (uncomment and adjust):
+      # VOLUME_MAP: ${ABS_ROOT_1:-/audiobooks}=/media,${ABS_ROOT_2:-/podcasts}=/media2
+      VOLUME_MAP: ${VOLUME_MAP:-}
     volumes:
       - ${AUDIOBOOK_PATH}:/media:rw
+      # Add more volumes here for additional libraries, e.g.:
+      # - ${AUDIOBOOK_PATH_2}:/media2:rw
       - shelf-renamer-data:/data
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped

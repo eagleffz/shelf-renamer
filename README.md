@@ -37,12 +37,34 @@ All config via environment variables or `.env` file:
 |----------|----------|---------|-------------|
 | `ABS_URL` | yes | — | Audiobookshelf base URL, e.g. `http://192.168.1.10:13378` |
 | `ABS_TOKEN` | yes | — | ABS API token (Settings → Users → your user → API Token) |
-| `AUDIOBOOK_PATH` | yes | — | Host path to audiobook library, mounted at `/media` in container |
+| `AUDIOBOOK_PATH` | yes | — | Host path to primary audiobook library, mounted at `/media` in container |
+| `VOLUME_MAP` | no | _(empty)_ | Extra library mappings — see [Multiple libraries](#multiple-libraries) |
 | `DEFAULT_TEMPLATE` | no | `{author} - {title} ({year})` | Default naming template shown in the UI |
 | `APP_PASSWORD` | no | _(empty — auth disabled)_ | Set to enable login page with password protection |
 | `DB_PATH` | no | `/data/shelf-renamer.db` | SQLite database path (inside the container) |
 | `UID` / `GID` | no | `1000` / `1000` | UID/GID used to write files — must match owner of `AUDIOBOOK_PATH` |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+
+### Multiple libraries
+
+If your ABS instance has libraries stored at different host paths, mount each path as a separate volume and set `VOLUME_MAP` to tell the app how ABS paths map to container mount points.
+
+**Format:** `ABS_HOST_PATH=CONTAINER_PATH` pairs, comma-separated.
+
+```yaml
+# docker-compose.yml
+volumes:
+  - /path/to/audiobooks:/media:rw
+  - /path/to/podcasts:/media2:rw
+
+environment:
+  VOLUME_MAP: /audiobooks=/media,/podcasts=/media2
+  #           ^ ABS-side root  ^ container mount
+```
+
+The ABS-side root is the path ABS reports for that library (visible in ABS → Libraries → Edit → Folders). Longer paths take priority if multiple entries match.
+
+When `VOLUME_MAP` is empty the app falls back to the original single-volume behaviour (`AUDIOBOOK_PATH` → `/media`).
 
 ### Password protection
 
