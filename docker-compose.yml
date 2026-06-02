@@ -11,16 +11,33 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_PASSWORD: ${APP_PASSWORD:-}
       DB_PATH: /data/shelf-renamer.db
-      # Optional: map additional ABS library roots to extra container mount points.
-      # Format: ABS_HOST_PATH=CONTAINER_PATH pairs, comma-separated.
-      # Example (uncomment and adjust):
-      # VOLUME_MAP: ${ABS_ROOT_1:-/audiobooks}=/media,${ABS_ROOT_2:-/podcasts}=/media2
+
+      # ── Multiple libraries ──────────────────────────────────────────────────
+      # Map ABS-reported library roots to container mount points.
+      # Format: ABS_ROOT=CONTAINER_PATH, comma-separated.
+      # ABS_ROOT = the folder path shown in ABS → Libraries → Edit → Folders.
+      #
+      # Single library (default — VOLUME_MAP not required):
+      #   AUDIOBOOK_PATH=/srv/audiobooks   →  mounted at /media
+      #
+      # Two libraries:
+      #   AUDIOBOOK_PATH=/srv/audiobooks   →  mounted at /media
+      #   AUDIOBOOK_PATH_2=/srv/podcasts   →  mounted at /media2
+      #   VOLUME_MAP=/audiobooks=/media,/podcasts=/media2
+      #
+      # Three or more: keep extending AUDIOBOOK_PATH_N, mount points /mediaN,
+      # and add each pair to VOLUME_MAP.
+      # ───────────────────────────────────────────────────────────────────────
       VOLUME_MAP: ${VOLUME_MAP:-}
+
     volumes:
       - ${AUDIOBOOK_PATH}:/media:rw
-      # Add more volumes here for additional libraries, e.g.:
+      # Second library (uncomment and set AUDIOBOOK_PATH_2 in .env):
       # - ${AUDIOBOOK_PATH_2}:/media2:rw
+      # Third library:
+      # - ${AUDIOBOOK_PATH_3}:/media3:rw
       - shelf-renamer-data:/data
+
     user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
 
