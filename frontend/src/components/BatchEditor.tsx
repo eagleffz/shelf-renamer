@@ -33,6 +33,19 @@ function normalizeSeriesName(s: string): string {
   return s.trim().replace(/\s*#\d+(\.\d+)?\s*$/, '').trim()
 }
 
+// Extract the number from an embedded series name like "Bobiverse #3" → "3"
+function indexFromName(name: string | null): string {
+  if (!name) return ''
+  const m = name.match(/#(\d+(?:\.\d+)?)\s*$/)
+  return m ? m[1] : ''
+}
+
+// Return sequence string: prefer parsed series_index, fall back to embedded name
+function resolveSeq(index: number | null, seriesName: string | null): string {
+  if (index !== null) return seqString(index)
+  return indexFromName(seriesName)
+}
+
 function relPath(abs_path: string, abs_library_root: string): string {
   if (abs_path.startsWith(abs_library_root)) {
     return abs_path.slice(abs_library_root.length).replace(/^\//, '')
@@ -73,9 +86,11 @@ export function BatchEditor({ books, loading }: Props) {
     const filtered = books
       .filter((b) => normalizeSeriesName(b.series ?? '').toLowerCase() === nameLower)
       .sort((a, b) => {
-        if (a.series_index !== null && b.series_index !== null) return a.series_index - b.series_index
-        if (a.series_index !== null) return -1
-        if (b.series_index !== null) return 1
+        const ai = a.series_index ?? parseFloat(indexFromName(a.series) || 'NaN')
+        const bi = b.series_index ?? parseFloat(indexFromName(b.series) || 'NaN')
+        if (!isNaN(ai) && !isNaN(bi)) return ai - bi
+        if (!isNaN(ai)) return -1
+        if (!isNaN(bi)) return 1
         return a.title.localeCompare(b.title)
       })
     setRows(filtered.map((b) => ({
@@ -86,8 +101,8 @@ export function BatchEditor({ books, loading }: Props) {
       published_year: b.published_year,
       abs_path: b.abs_path,
       abs_library_root: b.abs_library_root,
-      sequence: seqString(b.series_index),
-      originalSequence: seqString(b.series_index),
+      sequence: resolveSeq(b.series_index, b.series),
+      originalSequence: resolveSeq(b.series_index, b.series),
       inSeries: true,
     })))
   }
