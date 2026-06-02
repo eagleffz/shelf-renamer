@@ -8,7 +8,7 @@ Web app for clean file-level renaming of audiobooks in [Audiobookshelf](https://
 - Configurable naming template with live preview (e.g. `{author_lf}/{series}/{series_index_tag} - {title}`)
 - Folder breadcrumb diff view before any changes — conflict detection included
 - Rename history tracked in SQLite — books renamed before get a ✓ indicator; history clearable per library
-- On library load, filter auto-activates to show only books that need renaming; done books sorted to the bottom
+- Toggle button switches between "needs renaming" (default) and "already done" views
 - Books already in the correct location are automatically marked as done and persisted to history
 - Single-file items (`.m4b`, `.mp3`, etc.) always placed in a subfolder — never left bare in the library root
 - "root" badge in the book list flags file items sitting directly in the library root

@@ -53,12 +53,10 @@ export default function App() {
   // true once alreadyCorrectIds is fresh for the current books+template
   const [previewReady, setPreviewReady] = useState(false)
 
-  // filter: show only books that don't match the template
-  const [filterActive, setFilterActive] = useState(false)
+  // 'needs-rename': show books not yet done; 'done': show already-renamed/correct books
+  const [filterMode, setFilterMode] = useState<'needs-rename' | 'done'>('needs-rename')
   const [filterLoading, setFilterLoading] = useState(false)
 
-  // set to true after a library load to auto-activate filter once preview is ready
-  const autoFilterRef = useRef(false)
   // stable refs to avoid adding renamedIds/libraryId as computePreviewAll deps
   const renamedIdsRef = useRef(new Set<string>())
   const libraryIdRef = useRef('')
@@ -98,14 +96,13 @@ export default function App() {
     if (!libraryId || !authenticated) return
     setLoading(true)
     setSelected(new Set())
-    setFilterActive(false)
+    setFilterMode('needs-rename')
     setPreviewReady(false)
     setAlreadyCorrectIds(new Set())
     Promise.all([fetchBooks(libraryId), fetchHistory(libraryId)])
       .then(([bks, ids]) => {
         setBooks(bks)
         setRenamedIds(new Set(ids))
-        autoFilterRef.current = true
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
@@ -136,10 +133,6 @@ export default function App() {
       }).catch(() => {})
     }
 
-    if (autoFilterRef.current) {
-      autoFilterRef.current = false
-      setFilterActive(true)
-    }
     return result
   }, [books, template])
 
@@ -152,26 +145,19 @@ export default function App() {
   }, [computePreviewAll])
 
   async function toggleFilter() {
-    if (filterActive) {
-      setFilterActive(false)
-      return
-    }
-    setFilterActive(true)
+    const next = filterMode === 'needs-rename' ? 'done' : 'needs-rename'
+    setFilterMode(next)
     if (!previewReady) {
-      // Cancel pending debounce and run immediately so filter reflects current template
-      if (bgTimerRef.current) {
-        clearTimeout(bgTimerRef.current)
-        bgTimerRef.current = null
-      }
+      if (bgTimerRef.current) { clearTimeout(bgTimerRef.current); bgTimerRef.current = null }
       setFilterLoading(true)
-      try {
-        await computePreviewAll()
-      } catch {
-        setFilterActive(false)
-      } finally {
-        setFilterLoading(false)
-      }
+      try { await computePreviewAll() } catch { } finally { setFilterLoading(false) }
     }
+  }
+
+  function handleRefresh() {
+    // Cancel pending debounce so verify runs immediately after books reload
+    if (bgTimerRef.current) { clearTimeout(bgTimerRef.current); bgTimerRef.current = null }
+    setRefreshKey((k) => k + 1)
   }
 
   async function handleClearHistory() {
@@ -221,17 +207,13 @@ export default function App() {
   function handleTemplateChange(value: string) {
     setTemplate(value)
     setPreviewReady(false)
-    if (filterActive) {
-      setFilterActive(false)
-    }
+    setFilterMode('needs-rename')
   }
 
-  const changesCount = books.filter((b) => !alreadyCorrectIds.has(b.id)).length
   const isDone = (id: string) => renamedIds.has(id) || alreadyCorrectIds.has(id)
-  const displayedBooks = (filterActive
-    ? books.filter((b) => !alreadyCorrectIds.has(b.id))
-    : books
-  ).sort((a, b) => (isDone(a.id) ? 1 : 0) - (isDone(b.id) ? 1 : 0))
+  const needsRenameBooks = books.filter((b) => !isDone(b.id))
+  const doneBooks = books.filter((b) => isDone(b.id))
+  const displayedBooks = filterMode === 'needs-rename' ? needsRenameBooks : doneBooks
 
   function toggleBook(id: string) {
     setSelected((prev) => {
@@ -383,22 +365,22 @@ export default function App() {
               <button
                 className="btn btn-secondary"
                 disabled={!libraryId || loading}
-                onClick={() => setRefreshKey((k) => k + 1)}
-                title="Reload books from Audiobookshelf"
+                onClick={handleRefresh}
+                title="Reload books from Audiobookshelf and re-check correct locations"
               >
-                Refresh
+                {loading ? 'Refreshing…' : 'Refresh'}
               </button>
               <button
-                className={`btn btn-secondary${filterActive ? ' btn-active' : ''}`}
+                className={`btn btn-secondary${filterMode === 'done' ? ' btn-active' : ''}`}
                 disabled={!books.length || filterLoading}
                 onClick={toggleFilter}
-                title="Show only books whose path doesn't match the current template"
+                title="Toggle between books needing rename and already-done books"
               >
                 {filterLoading
-                  ? 'Filtering…'
-                  : filterActive
-                    ? `Changes only (${changesCount})`
-                    : 'Show changes'}
+                  ? 'Checking…'
+                  : filterMode === 'needs-rename'
+                    ? `Show done (${doneBooks.length})`
+                    : `Needs renaming (${needsRenameBooks.length})`}
               </button>
               <button
                 className="btn btn-secondary"
