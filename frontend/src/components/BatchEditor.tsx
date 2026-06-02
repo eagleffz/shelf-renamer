@@ -46,7 +46,6 @@ export function BatchEditor({ books, loading }: Props) {
     return acc
   }, {})
   const seriesList = Object.entries(seriesMap)
-    .filter(([, count]) => count >= 2)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
