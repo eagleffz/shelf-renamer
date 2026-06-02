@@ -15,6 +15,7 @@ class BookMetadata(BaseModel):
     title: str
     authors: list[Author] = []
     series: Optional[str] = None
+    series_id: Optional[str] = None
     series_index: Optional[float] = None
     published_year: Optional[str] = None
     narrator: Optional[str] = None
@@ -70,6 +71,22 @@ class RenameResult(BaseModel):
 class RenameResponse(BaseModel):
     results: list[RenameResult]
     scan_triggered: bool
+
+
+class SeriesUpdateItem(BaseModel):
+    book_id: str
+    series_id: Optional[str] = None
+    series_name: str
+    sequence: str
+
+
+class SeriesUpdateRequest(BaseModel):
+    items: list[SeriesUpdateItem]
+
+
+class SeriesUpdateResult(BaseModel):
+    book_id: str
+    success: bool
 
 
 class VerifyItem(BaseModel):

@@ -22,6 +22,7 @@ import {
   setUnauthorizedHandler,
   verifyBooks,
 } from './api'
+import { BatchEditor } from './components/BatchEditor'
 import { BookTable } from './components/BookTable'
 import { LibrarySelector } from './components/LibrarySelector'
 import { LoginPage } from './components/LoginPage'
@@ -30,6 +31,7 @@ import { ResultsPane } from './components/ResultsPane'
 import './index.css'
 
 type Phase = 'browse' | 'preview' | 'results'
+type Tab = 'library' | 'batch'
 
 const TEMPLATE_VARS = [
   '{title}', '{author}', '{author_lf}', '{authors}',
@@ -39,6 +41,7 @@ const TEMPLATE_VARS = [
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [authenticated, setAuthenticated] = useState(false)
+  const [tab, setTab] = useState<Tab>('library')
   const [phase, setPhase] = useState<Phase>('browse')
   const [template, setTemplate] = useState('{author_lf}/{series}/{series_index_tag} - {title}')
   const [libraryId, setLibraryId] = useState('')
@@ -442,6 +445,21 @@ export default function App() {
         </div>
       </header>
 
+      <div className="tab-bar">
+        <button
+          className={`tab-btn${tab === 'library' ? ' tab-active' : ''}`}
+          onClick={() => setTab('library')}
+        >
+          Library
+        </button>
+        <button
+          className={`tab-btn${tab === 'batch' ? ' tab-active' : ''}`}
+          onClick={() => setTab('batch')}
+        >
+          Batch Editor
+        </button>
+      </div>
+
       {error && <div className="error-banner">{error}</div>}
       {cleanupResult && (
         <div className="info-banner" onClick={() => setCleanupResult(null)}>
@@ -450,7 +468,10 @@ export default function App() {
       )}
 
       <main className="main">
-        {phase === 'browse' && (
+        {tab === 'batch' && (
+          <BatchEditor books={books} loading={loading} />
+        )}
+        {tab === 'library' && phase === 'browse' && (
           <BookTable
             books={displayedBooks}
             selected={selected}
@@ -462,7 +483,7 @@ export default function App() {
             loading={loading}
           />
         )}
-        {phase === 'preview' && (
+        {tab === 'library' && phase === 'preview' && (
           <PreviewTable
             items={previewItems}
             books={books}
@@ -470,7 +491,7 @@ export default function App() {
             onOverrideChange={handleOverrideChange}
           />
         )}
-        {phase === 'results' && renameResponse && (
+        {tab === 'library' && phase === 'results' && renameResponse && (
           <ResultsPane response={renameResponse} onReset={handleReset} />
         )}
       </main>

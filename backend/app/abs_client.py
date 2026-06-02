@@ -100,10 +100,12 @@ class ABSClient:
                 authors = []
 
             series_name = None
+            series_id = None
             series_index = None
             series_list = meta.get("series", [])
             if series_list:
                 series_name = series_list[0].get("name")
+                series_id = series_list[0].get("id") or None
                 seq = series_list[0].get("sequence")
                 try:
                     series_index = float(seq) if seq else None
@@ -127,6 +129,7 @@ class ABSClient:
                     title=meta.get("title") or item.get("id"),
                     authors=authors,
                     series=series_name,
+                    series_id=series_id,
                     series_index=series_index,
                     published_year=meta.get("publishedYear"),
                     narrator=narrator,
@@ -137,6 +140,21 @@ class ABSClient:
                 )
             )
         return books
+
+    async def update_series_index(
+        self, book_id: str, series_id: str | None, series_name: str, sequence: str
+    ) -> bool:
+        entry: dict = {"name": series_name, "sequence": sequence}
+        if series_id:
+            entry["id"] = series_id
+        try:
+            r = await self._client.patch(
+                f"/api/items/{book_id}/media",
+                json={"metadata": {"series": [entry]}},
+            )
+            return r.is_success
+        except httpx.HTTPError:
+            return False
 
     async def trigger_scan(self, library_id: str) -> bool:
         try:

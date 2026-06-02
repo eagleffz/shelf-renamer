@@ -21,6 +21,8 @@ from .models import (
     RenameRequest,
     RenameResponse,
     RenameResult,
+    SeriesUpdateRequest,
+    SeriesUpdateResult,
     VerifyRequest,
 )
 from .renamer import render_path_template, safe_rename, RenameError
@@ -139,6 +141,15 @@ async def history(library_id: str):
 async def delete_history(library_id: str):
     cleared = await clear_library_history(library_id)
     return {"cleared": cleared}
+
+
+@app.post("/api/batch/series", response_model=list[SeriesUpdateResult], dependencies=[Depends(require_auth)])
+async def batch_update_series(req: SeriesUpdateRequest):
+    results: list[SeriesUpdateResult] = []
+    for item in req.items:
+        ok = await _client().update_series_index(item.book_id, item.series_id, item.series_name, item.sequence)
+        results.append(SeriesUpdateResult(book_id=item.book_id, success=ok))
+    return results
 
 
 @app.post("/api/libraries/{library_id}/verify", dependencies=[Depends(require_auth)])

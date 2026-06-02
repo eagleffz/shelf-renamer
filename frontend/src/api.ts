@@ -9,6 +9,7 @@ export interface BookMetadata {
   title: string
   authors: Author[]
   series: string | null
+  series_id: string | null
   series_index: number | null
   published_year: string | null
   narrator: string | null
@@ -135,6 +136,14 @@ export const scanLibrary = (libraryId: string) =>
 
 export const clearHistory = (libraryId: string) =>
   request<{ cleared: number }>(`/api/libraries/${libraryId}/history`, { method: 'DELETE' })
+
+export const batchUpdateSeries = (
+  items: { book_id: string; series_id: string | null; series_name: string; sequence: string }[],
+) =>
+  request<{ book_id: string; success: boolean }[]>('/api/batch/series', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })
 
 export const verifyBooks = (
   libraryId: string,

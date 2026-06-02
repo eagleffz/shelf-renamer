@@ -10,6 +10,7 @@ Web app for clean file-level renaming of audiobooks in [Audiobookshelf](https://
 - Rename history tracked in SQLite — books renamed before get a ✓ indicator; history clearable per library
 - Toggle button switches between "needs renaming" (default) and "already done" views
 - Title search input to filter the book list by title
+- **Batch Editor** tab — select a series, reorder books via drag & drop or type sequence numbers directly, save back to ABS in one click
 - Books already in the correct location are automatically marked as done and persisted to history
 - Single-file items (`.m4b`, `.mp3`, etc.) always placed in a subfolder — never left bare in the library root
 - "root" badge in the book list flags file items sitting directly in the library root
@@ -177,6 +178,7 @@ All endpoints prefixed with `/api`. Endpoints marked 🔒 require `Authorization
 | `GET` | `/api/libraries/{id}/history` | 🔒 | Book IDs previously renamed in this library |
 | `DELETE` | `/api/libraries/{id}/history` | 🔒 | Clear rename history for a library |
 | `POST` | `/api/libraries/{id}/verify` | 🔒 | Mark books already in correct location as done |
+| `POST` | `/api/batch/series` | 🔒 | Bulk-update series sequence numbers via ABS API |
 | `POST` | `/api/preview` | 🔒 | Preview renames (no filesystem write) |
 | `POST` | `/api/rename` | 🔒 | Execute renames + trigger ABS scan |
 
