@@ -70,34 +70,26 @@ export function BatchEditor({ books, loading }: Props) {
     setSaveResult(null)
     setSortCol(null)
     const nameLower = name.toLowerCase()
-    // Sort: series books with number first, series books without number next, other books last
-    const sorted = [...books].sort((a, b) => {
-      const aInSeries = normalizeSeriesName(a.series ?? '').toLowerCase() === nameLower
-      const bInSeries = normalizeSeriesName(b.series ?? '').toLowerCase() === nameLower
-      if (aInSeries !== bInSeries) return aInSeries ? -1 : 1
-      if (aInSeries && bInSeries) {
+    const filtered = books
+      .filter((b) => normalizeSeriesName(b.series ?? '').toLowerCase() === nameLower)
+      .sort((a, b) => {
         if (a.series_index !== null && b.series_index !== null) return a.series_index - b.series_index
         if (a.series_index !== null) return -1
         if (b.series_index !== null) return 1
-      }
-      return a.title.localeCompare(b.title)
-    })
-    setRows(sorted.map((b) => {
-      const inSeries = normalizeSeriesName(b.series ?? '').toLowerCase() === nameLower
-      return {
-        book_id: b.id,
-        // Use null ID so ABS looks up/creates by clean name, not by stale per-book ID
-        series_id: null,
-        series_name: name,  // always the normalized clean name
-        title: b.title,
-        published_year: b.published_year,
-        abs_path: b.abs_path,
-        abs_library_root: b.abs_library_root,
-        sequence: inSeries ? seqString(b.series_index) : '',
-        originalSequence: inSeries ? seqString(b.series_index) : '',
-        inSeries,
-      }
-    }))
+        return a.title.localeCompare(b.title)
+      })
+    setRows(filtered.map((b) => ({
+      book_id: b.id,
+      series_id: null,
+      series_name: name,
+      title: b.title,
+      published_year: b.published_year,
+      abs_path: b.abs_path,
+      abs_library_root: b.abs_library_root,
+      sequence: seqString(b.series_index),
+      originalSequence: seqString(b.series_index),
+      inSeries: true,
+    })))
   }
 
   function handleSort(col: SortCol) {
@@ -248,15 +240,7 @@ export function BatchEditor({ books, loading }: Props) {
             <tbody>
               {rows.map((row, i) => {
                 const changed = row.sequence.trim() !== row.originalSequence
-                const prevInSeries = i > 0 && rows[i - 1].inSeries
-                const showDivider = !row.inSeries && prevInSeries
                 return (
-                  <>
-                    {showDivider && (
-                      <tr key={`div-${row.book_id}`} className="series-divider-row">
-                        <td colSpan={6}>— other books in library —</td>
-                      </tr>
-                    )}
                   <tr
                     key={row.book_id}
                     draggable
@@ -264,7 +248,7 @@ export function BatchEditor({ books, loading }: Props) {
                     onDragOver={(e) => handleDragOver(e, i)}
                     onDrop={(e) => handleDrop(e, i)}
                     onDragEnd={handleDragEnd}
-                    className={`${dragOver === i ? 'drag-over' : ''}${!row.inSeries ? ' row-other' : ''}`}
+                    className={dragOver === i ? 'drag-over' : ''}
                     style={{ opacity: dragIndexRef.current === i ? 0.4 : 1 }}
                   >
                     <td className="drag-handle" title="Drag to reorder">⠿</td>
@@ -285,7 +269,6 @@ export function BatchEditor({ books, loading }: Props) {
                       {relPath(row.abs_path, row.abs_library_root)}
                     </td>
                   </tr>
-                  </>
                 )
               })}
             </tbody>
