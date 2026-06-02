@@ -32,9 +32,15 @@ function relPath(abs_path: string, abs_library_root: string): string {
 }
 
 export function BatchEditor({ books, loading }: Props) {
-  const seriesList = [...new Set(
-    books.filter((b) => b.series).map((b) => b.series!)
-  )].sort()
+  const seriesList = Object.entries(
+    books.filter((b) => b.series).reduce<Record<string, number>>((acc, b) => {
+      acc[b.series!] = (acc[b.series!] ?? 0) + 1
+      return acc
+    }, {})
+  )
+    .filter(([, count]) => count >= 2)
+    .map(([name]) => name)
+    .sort()
 
   const [selectedSeries, setSelectedSeries] = useState('')
   const [rows, setRows] = useState<Row[]>([])
