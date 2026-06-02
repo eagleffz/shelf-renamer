@@ -126,6 +126,19 @@ body {
 .template-input:focus { border-color: var(--primary); }
 .template-input:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.title-filter-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  outline: none;
+  width: 180px;
+  font-size: 13px;
+}
+.title-filter-input:focus { border-color: var(--primary); }
+.title-filter-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .btn-icon {
   background: var(--secondary);
   border: none;

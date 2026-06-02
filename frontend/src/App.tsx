@@ -56,6 +56,7 @@ export default function App() {
   // 'needs-rename': show books not yet done; 'done': show already-renamed/correct books
   const [filterMode, setFilterMode] = useState<'needs-rename' | 'done'>('needs-rename')
   const [filterLoading, setFilterLoading] = useState(false)
+  const [titleFilter, setTitleFilter] = useState('')
 
   // stable refs to avoid adding renamedIds/libraryId as computePreviewAll deps
   const renamedIdsRef = useRef(new Set<string>())
@@ -97,6 +98,7 @@ export default function App() {
     setLoading(true)
     setSelected(new Set())
     setFilterMode('needs-rename')
+    setTitleFilter('')
     setPreviewReady(false)
     setAlreadyCorrectIds(new Set())
     Promise.all([fetchBooks(libraryId), fetchHistory(libraryId)])
@@ -213,7 +215,9 @@ export default function App() {
   const isDone = (id: string) => renamedIds.has(id) || alreadyCorrectIds.has(id)
   const needsRenameBooks = books.filter((b) => !isDone(b.id))
   const doneBooks = books.filter((b) => isDone(b.id))
-  const displayedBooks = filterMode === 'needs-rename' ? needsRenameBooks : doneBooks
+  const titleQuery = titleFilter.trim().toLowerCase()
+  const displayedBooks = (filterMode === 'needs-rename' ? needsRenameBooks : doneBooks)
+    .filter((b) => !titleQuery || b.title.toLowerCase().includes(titleQuery))
 
   function toggleBook(id: string) {
     setSelected((prev) => {
@@ -370,6 +374,14 @@ export default function App() {
               >
                 {loading ? 'Refreshing…' : 'Refresh'}
               </button>
+              <input
+                className="title-filter-input"
+                type="search"
+                value={titleFilter}
+                onChange={(e) => setTitleFilter(e.target.value)}
+                placeholder="Filter by title…"
+                disabled={!books.length}
+              />
               <button
                 className={`btn btn-secondary${filterMode === 'done' ? ' btn-active' : ''}`}
                 disabled={!books.length || filterLoading}
