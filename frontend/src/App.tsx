@@ -43,6 +43,7 @@ export default function App() {
   const [libraryId, setLibraryId] = useState('')
   const [books, setBooks] = useState<BookMetadata[]>([])
   const [loading, setLoading] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [renamedIds, setRenamedIds] = useState<Set<string>>(new Set())
 
@@ -101,7 +102,7 @@ export default function App() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [libraryId, authenticated])
+  }, [libraryId, authenticated, refreshKey])
 
   async function handleLogin(password: string) {
     const { token } = await login(password)
@@ -357,6 +358,14 @@ export default function App() {
           </div>
           {phase === 'browse' && (
             <>
+              <button
+                className="btn btn-secondary"
+                disabled={!libraryId || loading}
+                onClick={() => setRefreshKey((k) => k + 1)}
+                title="Reload books from Audiobookshelf"
+              >
+                Refresh
+              </button>
               <button
                 className={`btn btn-secondary${filterActive ? ' btn-active' : ''}`}
                 disabled={!books.length || filterLoading}
