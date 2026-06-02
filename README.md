@@ -10,7 +10,7 @@ Web app for clean file-level renaming of audiobooks in [Audiobookshelf](https://
 - Rename history tracked in SQLite — books renamed before get a ✓ indicator; history clearable per library
 - Toggle button switches between "needs renaming" (default) and "already done" views
 - Title search input to filter the book list by title
-- **Batch Editor** tab — select a series (only series with 2+ books shown), reorder via drag & drop or type sequence numbers, sortable columns, current ABS position always visible, save back to ABS in one click
+- **Batch Editor** tab — select a series, see all library books (series members first, rest below a divider), reorder via drag & drop or type sequence numbers, sortable columns, current ABS position always visible, save back to ABS in one click
 - Books already in the correct location are automatically marked as done and persisted to history
 - Single-file items (`.m4b`, `.mp3`, etc.) always placed in a subfolder — never left bare in the library root
 - "root" badge in the book list flags file items sitting directly in the library root
