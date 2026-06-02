@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import httpx
 from .models import Author, BookMetadata, Library
 
@@ -111,6 +112,14 @@ class ABSClient:
                     series_index = float(seq) if seq else None
                 except (TypeError, ValueError):
                     series_index = None
+                # ABS sometimes embeds the index in the name ("Bobiverse #1") with empty sequence
+                if series_index is None and series_name:
+                    m = re.search(r"#(\d+(?:\.\d+)?)\s*$", series_name)
+                    if m:
+                        try:
+                            series_index = float(m.group(1))
+                        except (ValueError, TypeError):
+                            pass
             elif meta.get("seriesName"):
                 series_name = meta["seriesName"]
 
