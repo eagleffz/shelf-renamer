@@ -19,6 +19,9 @@ interface Row {
   originalSequence: string
 }
 
+type SortCol = 'title' | 'year' | 'sequence'
+type SortDir = 'asc' | 'desc'
+
 function seqString(index: number | null): string {
   if (index === null) return ''
   return index === Math.floor(index) ? String(Math.floor(index)) : String(index)
@@ -29,6 +32,11 @@ function relPath(abs_path: string, abs_library_root: string): string {
     return abs_path.slice(abs_library_root.length).replace(/^\//, '')
   }
   return abs_path
+}
+
+function seqSortVal(s: string): number {
+  const n = parseFloat(s)
+  return isNaN(n) ? Infinity : n
 }
 
 export function BatchEditor({ books, loading }: Props) {
@@ -46,6 +54,8 @@ export function BatchEditor({ books, loading }: Props) {
   const [rows, setRows] = useState<Row[]>([])
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{ ok: number; fail: number } | null>(null)
+  const [sortCol, setSortCol] = useState<SortCol | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const dragIndexRef = useRef<number | null>(null)
   const [dragOver, setDragOver] = useState<number | null>(null)
@@ -53,6 +63,7 @@ export function BatchEditor({ books, loading }: Props) {
   function selectSeries(name: string) {
     setSelectedSeries(name)
     setSaveResult(null)
+    setSortCol(null)
     const filtered = books
       .filter((b) => b.series === name)
       .sort((a, b) => {
@@ -72,6 +83,24 @@ export function BatchEditor({ books, loading }: Props) {
       sequence: seqString(b.series_index),
       originalSequence: seqString(b.series_index),
     })))
+  }
+
+  function handleSort(col: SortCol) {
+    const dir = sortCol === col && sortDir === 'asc' ? 'desc' : 'asc'
+    setSortCol(col)
+    setSortDir(dir)
+    setRows((prev) => [...prev].sort((a, b) => {
+      let cmp = 0
+      if (col === 'title') cmp = a.title.localeCompare(b.title)
+      else if (col === 'year') cmp = (a.published_year ?? '').localeCompare(b.published_year ?? '')
+      else if (col === 'sequence') cmp = seqSortVal(a.sequence) - seqSortVal(b.sequence)
+      return dir === 'asc' ? cmp : -cmp
+    }))
+  }
+
+  function sortIcon(col: SortCol) {
+    if (sortCol !== col) return <span className="sort-icon sort-inactive">⇅</span>
+    return <span className="sort-icon">{sortDir === 'asc' ? '↑' : '↓'}</span>
   }
 
   function updateSequence(i: number, value: string) {
@@ -187,40 +216,53 @@ export function BatchEditor({ books, loading }: Props) {
             <thead>
               <tr>
                 <th style={{ width: 28 }}></th>
-                <th>#</th>
-                <th>Title</th>
-                <th>Year</th>
+                <th className="sortable-th" onClick={() => handleSort('sequence')}>
+                  # {sortIcon('sequence')}
+                </th>
+                <th style={{ width: 72 }}>Current</th>
+                <th className="sortable-th" onClick={() => handleSort('title')}>
+                  Title {sortIcon('title')}
+                </th>
+                <th className="sortable-th" onClick={() => handleSort('year')}>
+                  Year {sortIcon('year')}
+                </th>
                 <th>Path</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => (
-                <tr
-                  key={row.book_id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, i)}
-                  onDragOver={(e) => handleDragOver(e, i)}
-                  onDrop={(e) => handleDrop(e, i)}
-                  onDragEnd={handleDragEnd}
-                  className={dragOver === i ? 'drag-over' : ''}
-                  style={{ opacity: dragIndexRef.current === i ? 0.4 : 1 }}
-                >
-                  <td className="drag-handle" title="Drag to reorder">⠿</td>
-                  <td>
-                    <input
-                      className="seq-input"
-                      value={row.sequence}
-                      onChange={(e) => updateSequence(i, e.target.value)}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td>{row.title}</td>
-                  <td>{row.published_year ?? '—'}</td>
-                  <td className="monospace" style={{ fontSize: 11 }}>
-                    {relPath(row.abs_path, row.abs_library_root)}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((row, i) => {
+                const changed = row.sequence.trim() !== row.originalSequence
+                return (
+                  <tr
+                    key={row.book_id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, i)}
+                    onDragOver={(e) => handleDragOver(e, i)}
+                    onDrop={(e) => handleDrop(e, i)}
+                    onDragEnd={handleDragEnd}
+                    className={dragOver === i ? 'drag-over' : ''}
+                    style={{ opacity: dragIndexRef.current === i ? 0.4 : 1 }}
+                  >
+                    <td className="drag-handle" title="Drag to reorder">⠿</td>
+                    <td>
+                      <input
+                        className={`seq-input${changed ? ' seq-changed' : ''}`}
+                        value={row.sequence}
+                        onChange={(e) => updateSequence(i, e.target.value)}
+                        placeholder="—"
+                      />
+                    </td>
+                    <td className="seq-original">
+                      {row.originalSequence || <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                    </td>
+                    <td>{row.title}</td>
+                    <td>{row.published_year ?? '—'}</td>
+                    <td className="monospace" style={{ fontSize: 11 }}>
+                      {relPath(row.abs_path, row.abs_library_root)}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
