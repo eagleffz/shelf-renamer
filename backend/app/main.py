@@ -181,12 +181,15 @@ async def verify_books(library_id: str, req: VerifyRequest):
 async def preview(req: PreviewRequest):
     if not req.template.strip():
         raise HTTPException(status_code=422, detail="Template must not be empty")
-    try:
-        books = await _client().get_library_items(req.items[0]["library_id"] if req.items else "")
-    except (ABSClientError, IndexError):
-        books = []
+    library_ids = {item["library_id"] for item in req.items if item.get("library_id")}
+    book_map: dict[str, BookMetadata] = {}
+    for lib_id in library_ids:
+        try:
+            for b in await _client().get_library_items(lib_id):
+                book_map[b.id] = b
+        except ABSClientError:
+            continue  # preview is best-effort; a dead library yields no rows for its books
 
-    book_map = {b.id: b for b in books}
     results: list[PreviewItem] = []
 
     for item in req.items:

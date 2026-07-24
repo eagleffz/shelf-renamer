@@ -102,3 +102,33 @@ def test_rename_dry_run(client):
     data = r.json()
     assert data["results"][0]["success"] is True
     assert data["scan_triggered"] is False  # dry_run → no scan
+
+def test_preview_spans_multiple_libraries(client):
+    book1 = _make_book()
+    book2 = _make_book().model_copy(
+        update={
+            "id": "book2",
+            "library_id": "lib2",
+            "title": "Mort",
+            "abs_path": "/abs/other/Terry Pratchett/Mort",
+            "abs_library_root": "/abs/other",
+        }
+    )
+    by_library = {"lib1": [book1], "lib2": [book2]}
+
+    with patch.object(app.state, "abs") as mock_abs:
+        mock_abs.get_library_items = AsyncMock(side_effect=lambda lib_id, *a, **kw: by_library[lib_id])
+        r = client.post(
+            "/api/preview",
+            json={
+                "template": "{author} - {title}",
+                "items": [
+                    {"book_id": "book1", "library_id": "lib1"},
+                    {"book_id": "book2", "library_id": "lib2"},
+                ],
+            },
+        )
+    assert r.status_code == 200
+    items = r.json()
+    assert [i["book_id"] for i in items] == ["book1", "book2"]
+    assert [i["library_id"] for i in items] == ["lib1", "lib2"]
