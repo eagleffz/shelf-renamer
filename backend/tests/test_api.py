@@ -1,6 +1,9 @@
+import sqlite3
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
+from app.config import get_settings
 from app.main import app
 from app.models import Author, BookMetadata, Library
 
@@ -71,6 +74,62 @@ def test_preview(client):
     assert "1989" in items[0]["proposed_name"]
 
 
+def test_preview_spans_multiple_libraries(client):
+    book1 = _make_book()
+    book2 = _make_book().model_copy(
+        update={
+            "id": "book2",
+            "library_id": "lib2",
+            "title": "Mort",
+            "abs_path": "/abs/other/Terry Pratchett/Mort",
+            "abs_library_root": "/abs/other",
+        }
+    )
+    by_library = {"lib1": [book1], "lib2": [book2]}
+
+    with patch.object(app.state, "abs") as mock_abs:
+        mock_abs.get_library_items = AsyncMock(side_effect=lambda lib_id, *a, **kw: by_library[lib_id])
+        r = client.post(
+            "/api/preview",
+            json={
+                "template": "{author} - {title}",
+                "items": [
+                    {"book_id": "book1", "library_id": "lib1"},
+                    {"book_id": "book2", "library_id": "lib2"},
+                ],
+            },
+        )
+    assert r.status_code == 200
+    items = r.json()
+    assert [i["book_id"] for i in items] == ["book1", "book2"]
+    assert [i["library_id"] for i in items] == ["lib1", "lib2"]
+
+
+def test_verify_twice_keeps_one_row(client):
+    payload = {
+        "items": [
+            {
+                "book_id": "verify1",
+                "library_id": "libverify",
+                "current_path": "/media/Terry Pratchett/Mort",
+            }
+        ]
+    }
+    assert client.post("/api/libraries/libverify/verify", json=payload).status_code == 200
+    assert client.post("/api/libraries/libverify/verify", json=payload).status_code == 200
+
+    r = client.get("/api/libraries/libverify/history")
+    assert r.status_code == 200
+    assert r.json() == ["verify1"]
+
+    # DISTINCT would hide a duplicate — check the table itself.
+    with sqlite3.connect(get_settings().db_path) as db:
+        rows = db.execute(
+            "SELECT COUNT(*) FROM rename_history WHERE library_id = ?", ("libverify",)
+        ).fetchone()[0]
+    assert rows == 1
+
+
 def test_preview_empty_template(client):
     r = client.post(
         "/api/preview",
@@ -102,33 +161,3 @@ def test_rename_dry_run(client):
     data = r.json()
     assert data["results"][0]["success"] is True
     assert data["scan_triggered"] is False  # dry_run → no scan
-
-def test_preview_spans_multiple_libraries(client):
-    book1 = _make_book()
-    book2 = _make_book().model_copy(
-        update={
-            "id": "book2",
-            "library_id": "lib2",
-            "title": "Mort",
-            "abs_path": "/abs/other/Terry Pratchett/Mort",
-            "abs_library_root": "/abs/other",
-        }
-    )
-    by_library = {"lib1": [book1], "lib2": [book2]}
-
-    with patch.object(app.state, "abs") as mock_abs:
-        mock_abs.get_library_items = AsyncMock(side_effect=lambda lib_id, *a, **kw: by_library[lib_id])
-        r = client.post(
-            "/api/preview",
-            json={
-                "template": "{author} - {title}",
-                "items": [
-                    {"book_id": "book1", "library_id": "lib1"},
-                    {"book_id": "book2", "library_id": "lib2"},
-                ],
-            },
-        )
-    assert r.status_code == 200
-    items = r.json()
-    assert [i["book_id"] for i in items] == ["book1", "book2"]
-    assert [i["library_id"] for i in items] == ["lib1", "lib2"]

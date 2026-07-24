@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AppConfig,
   BookMetadata,
@@ -216,28 +216,34 @@ export default function App() {
     setFilterMode('needs-rename')
   }
 
-  const isDone = (id: string) => renamedIds.has(id) || alreadyCorrectIds.has(id)
-  const needsRenameBooks = books.filter((b) => !isDone(b.id))
-  const doneBooks = books.filter((b) => isDone(b.id))
   const titleQuery = titleFilter.trim().toLowerCase()
-  const displayedBooks = (filterMode === 'needs-rename' ? needsRenameBooks : doneBooks)
-    .filter((b) => !titleQuery || b.title.toLowerCase().includes(titleQuery))
 
-  function toggleBook(id: string) {
+  const bookMap = useMemo(() => new Map(books.map((b) => [b.id, b])), [books])
+
+  const { needsRenameBooks, doneBooks, displayedBooks } = useMemo(() => {
+    const isDone = (id: string) => renamedIds.has(id) || alreadyCorrectIds.has(id)
+    const needs = books.filter((b) => !isDone(b.id))
+    const done = books.filter((b) => isDone(b.id))
+    const displayed = (filterMode === 'needs-rename' ? needs : done)
+      .filter((b) => !titleQuery || b.title.toLowerCase().includes(titleQuery))
+    return { needsRenameBooks: needs, doneBooks: done, displayedBooks: displayed }
+  }, [books, renamedIds, alreadyCorrectIds, filterMode, titleQuery])
+
+  const toggleBook = useCallback((id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
-  }
+  }, [])
 
-  function toggleAll() {
+  const toggleAll = useCallback(() => {
     setSelected((prev) =>
       prev.size === displayedBooks.length
         ? new Set()
         : new Set(displayedBooks.map((b) => b.id))
     )
-  }
+  }, [displayedBooks])
 
   async function handlePreview() {
     if (!selected.size) return
@@ -246,7 +252,7 @@ export default function App() {
     setOverrides({})
     try {
       const items = [...selected].map((id) => {
-        const book = books.find((b) => b.id === id)!
+        const book = bookMap.get(id)!
         return { book_id: id, library_id: book.library_id }
       })
       const result = await previewRename(template, items)
@@ -309,13 +315,7 @@ export default function App() {
     setRenameResponse(null)
     setOverrides({})
     setError('')
-    if (libraryId) {
-      setLoading(true)
-      Promise.all([fetchBooks(libraryId), fetchHistory(libraryId)])
-        .then(([bks, ids]) => { setBooks(bks); setRenamedIds(new Set(ids)) })
-        .catch((e: Error) => setError(e.message))
-        .finally(() => setLoading(false))
-    }
+    setRefreshKey((k) => k + 1)
   }
 
   if (!config) return null
@@ -496,7 +496,7 @@ export default function App() {
         {tab === 'library' && phase === 'preview' && (
           <PreviewTable
             items={previewItems}
-            books={books}
+            bookMap={bookMap}
             overrides={overrides}
             onOverrideChange={handleOverrideChange}
           />

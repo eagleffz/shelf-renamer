@@ -127,6 +127,29 @@ async def test_library_items_not_cached_on_error():
 
 
 @pytest.mark.anyio
+async def test_pagination_stops_on_empty_page_without_total():
+    pages: list[int] = []
+
+    def handler(req):
+        if req.url.path == "/api/libraries":
+            return _lib_response()
+        page = int(req.url.params.get("page", 0))
+        pages.append(page)
+        if page == 0:
+            # No "total" key at all — must not be read as zero.
+            body = _items_response().json()
+            body.pop("total")
+            return httpx.Response(200, json=body)
+        return httpx.Response(200, json={"results": []})
+
+    client = _make_client(httpx.MockTransport(handler))
+    books = await client.get_library_items("lib1")
+    assert pages == [0, 1]  # second page was fetched, empty page ended the walk
+    assert len(books) == 1
+    await client.close()
+
+
+@pytest.mark.anyio
 async def test_unauthorized_raises():
     def handler(req):
         return httpx.Response(401, text="Unauthorized")

@@ -15,19 +15,40 @@ CREATE TABLE IF NOT EXISTS rename_history (
 )
 """
 
+# Existing databases predate the unique index and already hold duplicate
+# (book_id, library_id) rows, so they must be collapsed to the newest row per
+# pair before the index can be created.
+_DEDUPE = """
+DELETE FROM rename_history
+WHERE id NOT IN (SELECT MAX(id) FROM rename_history GROUP BY book_id, library_id)
+"""
+
+_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_rename_history_library ON rename_history(library_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_rename_history_book ON rename_history(book_id, library_id)",
+]
+
+_INSERT = (
+    "INSERT OR REPLACE INTO rename_history (book_id, library_id, old_path, new_path) "
+    "VALUES (?, ?, ?, ?)"
+)
+
 
 async def init_db() -> None:
     async with aiosqlite.connect(get_settings().db_path) as db:
         await db.execute(_CREATE)
+        await db.execute(_DEDUPE)
+        for stmt in _INDEXES:
+            await db.execute(stmt)
         await db.commit()
 
 
-async def record_rename(book_id: str, library_id: str, old_path: str, new_path: str) -> None:
+async def record_renames(entries: list[tuple[str, str, str, str]]) -> None:
+    """Record a batch of successful renames in one connection."""
+    if not entries:
+        return
     async with aiosqlite.connect(get_settings().db_path) as db:
-        await db.execute(
-            "INSERT INTO rename_history (book_id, library_id, old_path, new_path) VALUES (?, ?, ?, ?)",
-            (book_id, library_id, old_path, new_path),
-        )
+        await db.executemany(_INSERT, entries)
         await db.commit()
 
 
@@ -43,11 +64,10 @@ async def get_renamed_book_ids(library_id: str) -> list[str]:
 
 async def mark_books_verified(entries: list[tuple[str, str, str]]) -> None:
     """Record books already in correct location (old_path == new_path)."""
+    if not entries:
+        return
     async with aiosqlite.connect(get_settings().db_path) as db:
-        await db.executemany(
-            "INSERT INTO rename_history (book_id, library_id, old_path, new_path) VALUES (?, ?, ?, ?)",
-            [(bid, lid, path, path) for bid, lid, path in entries],
-        )
+        await db.executemany(_INSERT, [(bid, lid, path, path) for bid, lid, path in entries])
         await db.commit()
 
 

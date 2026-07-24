@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .abs_client import ABSClient, ABSClientError
 from .auth import init_auth, require_auth, verify_password
 from .config import get_settings
-from .database import clear_library_history, get_renamed_book_ids, init_db, mark_books_verified, record_rename
+from .database import clear_library_history, get_renamed_book_ids, init_db, mark_books_verified, record_renames
 from .models import (
     BookMetadata,
     CleanupResponse,
@@ -163,11 +164,17 @@ async def delete_history(library_id: str):
 
 @app.post("/api/batch/series", response_model=list[SeriesUpdateResult], dependencies=[Depends(require_auth)])
 async def batch_update_series(req: SeriesUpdateRequest):
-    results: list[SeriesUpdateResult] = []
-    for item in req.items:
-        ok = await _client().update_series_index(item.book_id, item.series_id, item.series_name, item.sequence)
-        results.append(SeriesUpdateResult(book_id=item.book_id, success=ok))
-    return results
+    sem = asyncio.Semaphore(8)
+
+    async def _one(item) -> SeriesUpdateResult:
+        async with sem:
+            ok = await _client().update_series_index(
+                item.book_id, item.series_id, item.series_name, item.sequence
+            )
+            return SeriesUpdateResult(book_id=item.book_id, success=ok)
+
+    # gather preserves input order.
+    return list(await asyncio.gather(*(_one(i) for i in req.items)))
 
 
 @app.post("/api/libraries/{library_id}/verify", dependencies=[Depends(require_auth)])
@@ -199,22 +206,28 @@ async def preview(req: PreviewRequest):
         book = _apply_overrides(book, item.get("overrides"))
         container_path, lib_root = _resolve_paths(book.abs_path, book.abs_library_root)
         proposed_path = render_path_template(req.template, book, lib_root)
-        current_name = os.path.relpath(container_path, lib_root)
-        proposed_name = os.path.relpath(proposed_path, lib_root)
-        no_change = container_path == proposed_path
-        conflict = not no_change and os.path.exists(proposed_path)
         results.append(
             PreviewItem(
                 book_id=book.id,
                 library_id=book.library_id,
-                current_name=current_name,
-                proposed_name=proposed_name,
+                current_name=os.path.relpath(container_path, lib_root),
+                proposed_name=os.path.relpath(proposed_path, lib_root),
                 current_path=container_path,
                 proposed_path=proposed_path,
-                conflict=conflict,
-                no_change=no_change,
+                conflict=False,
+                no_change=container_path == proposed_path,
             )
         )
+
+    # One thread hop for all conflict checks instead of a blocking stat per book.
+    pending = [r for r in results if not r.no_change]
+    if pending:
+        exists = await asyncio.to_thread(
+            lambda: [os.path.exists(r.proposed_path) for r in pending]
+        )
+        for result, found in zip(pending, exists):
+            result.conflict = found
+
     return results
 
 
@@ -236,6 +249,7 @@ async def rename(req: RenameRequest):
 
     results: list[RenameResult] = []
     renamed_library_ids: set[str] = set()
+    history_entries: list[tuple[str, str, str, str]] = []
 
     for item in req.items:
         book = books_by_id.get(item.book_id)
@@ -267,9 +281,9 @@ async def rename(req: RenameRequest):
             continue
 
         try:
-            safe_rename(container_path, proposed_path)
+            await asyncio.to_thread(safe_rename, container_path, proposed_path)
             renamed_library_ids.add(item.library_id)
-            await record_rename(book.id, item.library_id, container_path, proposed_path)
+            history_entries.append((book.id, item.library_id, container_path, proposed_path))
             results.append(
                 RenameResult(
                     book_id=book.id,
@@ -289,6 +303,10 @@ async def rename(req: RenameRequest):
                 )
             )
 
+    # One write for the whole batch. If the process dies mid-run the files are moved
+    # but this run's history is lost — the background verify repopulates it.
+    await record_renames(history_entries)
+
     scan_triggered = False
     if not req.dry_run and renamed_library_ids:
         for lib_id in renamed_library_ids:
@@ -300,13 +318,18 @@ async def rename(req: RenameRequest):
 
 
 @app.post("/api/cleanup", response_model=CleanupResponse, dependencies=[Depends(require_auth)])
-async def cleanup_empty_dirs():
+def cleanup_empty_dirs():
+    # Plain def, not async: FastAPI runs it in the threadpool so the os.walk over the
+    # whole media root does not stall the event loop.
     root = get_settings().media_root
     removed: list[str] = []
     for dirpath, _dirnames, _filenames in os.walk(root, topdown=False):
         if dirpath == root:
             continue
         try:
+            # Re-read the directory: with topdown=False os.walk's dirnames are stale,
+            # so a child removed earlier still appears there. This is what makes the
+            # removal cascade up the tree.
             if not os.listdir(dirpath):
                 os.rmdir(dirpath)
                 removed.append(os.path.relpath(dirpath, root))

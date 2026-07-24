@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { BookMetadata } from '../api'
 
 interface Props {
@@ -19,6 +20,75 @@ function ExternalLinkIcon() {
     </svg>
   )
 }
+
+interface RowProps {
+  book: BookMetadata
+  isSelected: boolean
+  wasRenamed: boolean
+  isCorrect: boolean
+  absUrl: string
+  onToggle: (id: string) => void
+}
+
+const BookRow = memo(function BookRow({ book, isSelected, wasRenamed, isCorrect, absUrl, onToggle }: RowProps) {
+  const itemName = book.abs_path.split('/').at(-1) ?? book.abs_path
+  const rel = book.abs_path.startsWith(book.abs_library_root)
+    ? book.abs_path.slice(book.abs_library_root.length).replace(/^\//, '')
+    : book.abs_path
+  const isAtRoot = book.is_file && !rel.includes('/')
+  return (
+    <tr
+      className={isSelected ? 'selected' : ''}
+      onClick={() => onToggle(book.id)}
+    >
+      <td onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggle(book.id)}
+        />
+      </td>
+      <td>
+        <span className={`badge ${book.is_file ? 'badge-file' : 'badge-folder'}`}>
+          {book.is_file ? book.file_extension.replace('.', '').toUpperCase() : 'folder'}
+        </span>
+        {isAtRoot && (
+          <span className="badge badge-root" title="File is directly in library root — not in a subfolder">
+            root
+          </span>
+        )}
+        {(wasRenamed || isCorrect) && (
+          <span
+            className="badge badge-renamed"
+            title={wasRenamed ? 'Previously renamed by shelf-renamer' : 'Already matches the template'}
+          >
+            ✓
+          </span>
+        )}
+      </td>
+      <td className="monospace">{itemName}</td>
+      <td>{book.title}</td>
+      <td>{book.authors.map((a) => a.name).join(', ')}</td>
+      <td>{book.published_year ?? '—'}</td>
+      <td>
+        {book.series
+          ? `${book.series}${book.series_index != null ? ` #${book.series_index}` : ''}`
+          : '—'}
+      </td>
+      <td onClick={(e) => e.stopPropagation()}>
+        <a
+          className="btn-abs-link"
+          href={`${absUrl}/item/${book.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open in Audiobookshelf"
+        >
+          <ExternalLinkIcon />
+        </a>
+      </td>
+    </tr>
+  )
+})
 
 export function BookTable({ books, selected, renamedIds, alreadyCorrectIds, absUrl, onToggle, onSelectAll, loading }: Props) {
   if (loading) return <p className="loading">Loading books…</p>
@@ -49,68 +119,17 @@ export function BookTable({ books, selected, renamedIds, alreadyCorrectIds, absU
           </tr>
         </thead>
         <tbody>
-          {books.map((book) => {
-            const itemName = book.abs_path.split('/').at(-1) ?? book.abs_path
-            const wasRenamed = renamedIds.has(book.id)
-            const isCorrect = alreadyCorrectIds.has(book.id)
-            const rel = book.abs_path.startsWith(book.abs_library_root)
-              ? book.abs_path.slice(book.abs_library_root.length).replace(/^\//, '')
-              : book.abs_path
-            const isAtRoot = book.is_file && !rel.includes('/')
-            return (
-              <tr
-                key={book.id}
-                className={selected.has(book.id) ? 'selected' : ''}
-                onClick={() => onToggle(book.id)}
-              >
-                <td onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(book.id)}
-                    onChange={() => onToggle(book.id)}
-                  />
-                </td>
-                <td>
-                  <span className={`badge ${book.is_file ? 'badge-file' : 'badge-folder'}`}>
-                    {book.is_file ? book.file_extension.replace('.', '').toUpperCase() : 'folder'}
-                  </span>
-                  {isAtRoot && (
-                    <span className="badge badge-root" title="File is directly in library root — not in a subfolder">
-                      root
-                    </span>
-                  )}
-                  {(wasRenamed || isCorrect) && (
-                    <span
-                      className="badge badge-renamed"
-                      title={wasRenamed ? 'Previously renamed by shelf-renamer' : 'Already matches the template'}
-                    >
-                      ✓
-                    </span>
-                  )}
-                </td>
-                <td className="monospace">{itemName}</td>
-                <td>{book.title}</td>
-                <td>{book.authors.map((a) => a.name).join(', ')}</td>
-                <td>{book.published_year ?? '—'}</td>
-                <td>
-                  {book.series
-                    ? `${book.series}${book.series_index != null ? ` #${book.series_index}` : ''}`
-                    : '—'}
-                </td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  <a
-                    className="btn-abs-link"
-                    href={`${absUrl}/item/${book.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Open in Audiobookshelf"
-                  >
-                    <ExternalLinkIcon />
-                  </a>
-                </td>
-              </tr>
-            )
-          })}
+          {books.map((book) => (
+            <BookRow
+              key={book.id}
+              book={book}
+              isSelected={selected.has(book.id)}
+              wasRenamed={renamedIds.has(book.id)}
+              isCorrect={alreadyCorrectIds.has(book.id)}
+              absUrl={absUrl}
+              onToggle={onToggle}
+            />
+          ))}
         </tbody>
       </table>
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { BookMetadata } from '../api'
 import { batchUpdateSeries } from '../api'
 
@@ -56,14 +56,16 @@ function seqSortVal(s: string): number {
 }
 
 export function BatchEditor({ books, loading, libraryId }: Props) {
-  const seriesMap = books.filter((b) => b.series).reduce<Record<string, number>>((acc, b) => {
-    const key = normalizeSeriesName(b.series!)
-    if (key) acc[key] = (acc[key] ?? 0) + 1
-    return acc
-  }, {})
-  const seriesList = Object.entries(seriesMap)
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const seriesList = useMemo(() => {
+    const seriesMap = books.filter((b) => b.series).reduce<Record<string, number>>((acc, b) => {
+      const key = normalizeSeriesName(b.series!)
+      if (key) acc[key] = (acc[key] ?? 0) + 1
+      return acc
+    }, {})
+    return Object.entries(seriesMap)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [books])
 
   const [selectedSeries, setSelectedSeries] = useState('')
   const [rows, setRows] = useState<Row[]>([])
@@ -151,8 +153,9 @@ export function BatchEditor({ books, loading, libraryId }: Props) {
       const fail = results.length - ok
       setSaveResult({ ok, fail })
       if (ok > 0) {
+        const resultMap = new Map(results.map((x) => [x.book_id, x]))
         setRows((prev) => prev.map((r) => {
-          const res = results.find((x) => x.book_id === r.book_id)
+          const res = resultMap.get(r.book_id)
           return res?.success ? { ...r, originalSequence: r.sequence.trim() } : r
         }))
       }

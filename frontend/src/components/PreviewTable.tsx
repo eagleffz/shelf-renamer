@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import type { BookMetadata, PreviewItem } from '../api'
 
 interface Props {
   items: PreviewItem[]
-  books: BookMetadata[]
+  bookMap: Map<string, BookMetadata>
   overrides: Record<string, Record<string, string>>
   onOverrideChange: (bookId: string, field: string, value: string) => void
 }
@@ -104,14 +104,13 @@ function OverrideEditor({
   )
 }
 
-export function PreviewTable({ items, books, overrides, onOverrideChange }: Props) {
+export function PreviewTable({ items, bookMap, overrides, onOverrideChange }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   if (!items.length) return null
 
   const changes = items.filter((i) => !i.no_change)
   const noChange = items.filter((i) => i.no_change)
-  const bookMap = Object.fromEntries(books.map((b) => [b.id, b]))
 
   return (
     <div className="preview-wrap">
@@ -132,10 +131,10 @@ export function PreviewTable({ items, books, overrides, onOverrideChange }: Prop
           <tbody>
             {changes.map((item) => {
               const isExpanded = expandedId === item.book_id
-              const book = bookMap[item.book_id]
+              const book = bookMap.get(item.book_id)
               return (
-                <>
-                  <tr key={item.book_id} className={item.conflict ? 'conflict' : ''}>
+                <Fragment key={item.book_id}>
+                  <tr className={item.conflict ? 'conflict' : ''}>
                     <td><PathBreadcrumb path={item.current_name} variant="old" /></td>
                     <td className="arrow">→</td>
                     <td><PathBreadcrumb path={item.proposed_name} variant="new" /></td>
@@ -155,7 +154,7 @@ export function PreviewTable({ items, books, overrides, onOverrideChange }: Prop
                     </td>
                   </tr>
                   {isExpanded && book && (
-                    <tr key={`${item.book_id}-edit`} className="override-row">
+                    <tr className="override-row">
                       <td colSpan={5}>
                         <OverrideEditor
                           book={book}
@@ -165,7 +164,7 @@ export function PreviewTable({ items, books, overrides, onOverrideChange }: Prop
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
           </tbody>

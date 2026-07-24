@@ -100,8 +100,15 @@ class ABSClient:
                 raise ABSClientError(503, f"Cannot reach ABS: {e}") from e
             data = r.json()
             batch = data.get("results", [])
+            # An empty page always ends the walk — guards against a missing/wrong
+            # "total" spinning this loop forever on identical requests.
+            if not batch:
+                break
             items.extend(batch)
-            if len(items) >= data.get("total", 0):
+            total = data.get("total")
+            # A missing "total" means "keep going until an empty page", not "zero"
+            # — treating it as zero silently truncated libraries to one page.
+            if total is not None and len(items) >= total:
                 break
             page += 1
 
