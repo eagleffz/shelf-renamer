@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from functools import lru_cache
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -74,30 +75,27 @@ def _apply_overrides(book: BookMetadata, overrides: dict | None) -> BookMetadata
     return BookMetadata(**data)
 
 
-def _container_root_for(abs_path: str) -> str:
-    """Return the container mount-point root that owns abs_path."""
-    settings = get_settings()
-    volume_map = sorted(settings.parsed_volume_map(), key=lambda x: len(x[0]), reverse=True)
-    for abs_root, container_root in volume_map:
-        if abs_path == abs_root or abs_path.startswith(abs_root + "/"):
-            return container_root
-    return settings.media_root
+@lru_cache
+def _sorted_volume_map() -> tuple[tuple[str, str], ...]:
+    """VOLUME_MAP parsed once, longest ABS root first so the longest match wins."""
+    return tuple(
+        sorted(get_settings().parsed_volume_map(), key=lambda x: len(x[0]), reverse=True)
+    )
 
 
-def _container_path(abs_path: str, abs_library_root: str) -> str:
-    settings = get_settings()
-    # Try explicit VOLUME_MAP entries first (longest match wins)
-    volume_map = sorted(settings.parsed_volume_map(), key=lambda x: len(x[0]), reverse=True)
-    for abs_root, container_root in volume_map:
+def _resolve_paths(abs_path: str, abs_library_root: str) -> tuple[str, str]:
+    """Return (container_path, container_root) for an ABS-host path."""
+    for abs_root, container_root in _sorted_volume_map():
         if abs_path == abs_root or abs_path.startswith(abs_root + "/"):
             rel = os.path.relpath(abs_path, abs_root)
-            return os.path.join(container_root, rel)
+            return os.path.join(container_root, rel), container_root
     # Fallback: replace abs_library_root with media_root (original behaviour)
+    media_root = get_settings().media_root
     try:
         rel = os.path.relpath(abs_path, abs_library_root)
     except ValueError:
         rel = abs_path.lstrip("/")
-    return os.path.join(settings.media_root, rel)
+    return os.path.join(media_root, rel), media_root
 
 
 @app.get("/api/health")
@@ -196,8 +194,7 @@ async def preview(req: PreviewRequest):
         if not book:
             continue
         book = _apply_overrides(book, item.get("overrides"))
-        container_path = _container_path(book.abs_path, book.abs_library_root)
-        lib_root = _container_root_for(book.abs_path)
+        container_path, lib_root = _resolve_paths(book.abs_path, book.abs_library_root)
         proposed_path = render_path_template(req.template, book, lib_root)
         current_name = os.path.relpath(container_path, lib_root)
         proposed_name = os.path.relpath(proposed_path, lib_root)
@@ -227,7 +224,8 @@ async def rename(req: RenameRequest):
     books_by_id: dict[str, object] = {}
     for lib_id in library_ids:
         try:
-            lib_books = await _client().get_library_items(lib_id)
+            # Renaming mutates disk, so it must see ABS truth rather than the cache.
+            lib_books = await _client().get_library_items(lib_id, use_cache=False)
             for b in lib_books:
                 books_by_id[b.id] = b
         except ABSClientError as e:
@@ -251,8 +249,8 @@ async def rename(req: RenameRequest):
             continue
 
         book = _apply_overrides(book, item.overrides)
-        container_path = _container_path(book.abs_path, book.abs_library_root)
-        proposed_path = render_path_template(req.template, book, _container_root_for(book.abs_path))
+        container_path, lib_root = _resolve_paths(book.abs_path, book.abs_library_root)
+        proposed_path = render_path_template(req.template, book, lib_root)
 
         if req.dry_run or container_path == proposed_path:
             results.append(

@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import httpx
 from .models import Author, BookMetadata, Library
 
 AUDIO_EXTENSIONS = {'.m4b', '.mp3', '.mp4', '.m4a', '.flac', '.aac', '.ogg', '.opus', '.wma'}
+
+# How long a fetched library listing stays usable without hitting ABS again.
+CACHE_TTL_SECONDS = 60
 
 
 class ABSClientError(Exception):
@@ -23,9 +27,19 @@ class ABSClient:
             headers={"Authorization": f"Bearer {token}"},
             timeout=30.0,
         )
+        self._items_cache: dict[str, tuple[float, list[BookMetadata]]] = {}
+        self._libraries_cache: tuple[float, list[Library]] | None = None
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    def invalidate(self, library_id: str | None = None) -> None:
+        """Drop cached items for one library (or all) plus the library list."""
+        if library_id is None:
+            self._items_cache.clear()
+        else:
+            self._items_cache.pop(library_id, None)
+        self._libraries_cache = None
 
     def _check(self, response: httpx.Response) -> httpx.Response:
         if not response.is_success:
@@ -39,7 +53,11 @@ class ABSClient:
         except httpx.HTTPError:
             return False
 
-    async def get_libraries(self) -> list[Library]:
+    async def get_libraries(self, *, use_cache: bool = True) -> list[Library]:
+        if use_cache and self._libraries_cache is not None:
+            fetched_at, cached = self._libraries_cache
+            if time.monotonic() - fetched_at < CACHE_TTL_SECONDS:
+                return cached
         try:
             r = self._check(await self._client.get("/api/libraries"))
         except httpx.HTTPError as e:
@@ -49,11 +67,19 @@ class ABSClient:
         for lib in data.get("libraries", []):
             folders = [f.get("fullPath", "") for f in lib.get("folders", [])]
             libraries.append(Library(id=lib["id"], name=lib["name"], folders=folders))
+        self._libraries_cache = (time.monotonic(), libraries)
         return libraries
 
-    async def get_library_items(self, library_id: str, lib_root: str = "") -> list[BookMetadata]:
+    async def get_library_items(
+        self, library_id: str, lib_root: str = "", *, use_cache: bool = True
+    ) -> list[BookMetadata]:
+        if use_cache:
+            entry = self._items_cache.get(library_id)
+            if entry is not None and time.monotonic() - entry[0] < CACHE_TTL_SECONDS:
+                return entry[1]
+
         if not lib_root:
-            libs = await self.get_libraries()
+            libs = await self.get_libraries(use_cache=use_cache)
             for lib in libs:
                 if lib.id == library_id and lib.folders:
                     lib_root = lib.folders[0]
@@ -148,6 +174,7 @@ class ABSClient:
                     abs_library_root=lib_root,
                 )
             )
+        self._items_cache[library_id] = (time.monotonic(), books)
         return books
 
     async def update_series_index(
@@ -164,6 +191,9 @@ class ABSClient:
             return r.is_success
         except httpx.HTTPError:
             return False
+        finally:
+            # The book's library id is unknown here — dropping everything is cheap.
+            self.invalidate()
 
     async def trigger_scan(self, library_id: str) -> bool:
         try:
@@ -171,3 +201,5 @@ class ABSClient:
             return r.is_success
         except httpx.HTTPError:
             return False
+        finally:
+            self.invalidate(library_id)

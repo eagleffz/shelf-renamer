@@ -87,6 +87,46 @@ async def test_get_library_items():
 
 
 @pytest.mark.anyio
+async def test_library_items_cached_until_invalidated():
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        if req.url.path == "/api/libraries":
+            return _lib_response()
+        if "/items" in req.url.path:
+            return _items_response()
+        return httpx.Response(404)
+
+    client = _make_client(httpx.MockTransport(handler))
+    await client.get_library_items("lib1")
+    after_first = calls["n"]
+    assert after_first > 0
+
+    await client.get_library_items("lib1")
+    assert calls["n"] == after_first  # served from cache, no HTTP
+
+    client.invalidate()
+    await client.get_library_items("lib1")
+    assert calls["n"] == after_first * 2
+    await client.close()
+
+
+@pytest.mark.anyio
+async def test_library_items_not_cached_on_error():
+    def handler(req):
+        if req.url.path == "/api/libraries":
+            return _lib_response()
+        return httpx.Response(500, text="boom")
+
+    client = _make_client(httpx.MockTransport(handler))
+    with pytest.raises(ABSClientError):
+        await client.get_library_items("lib1")
+    assert "lib1" not in client._items_cache
+    await client.close()
+
+
+@pytest.mark.anyio
 async def test_unauthorized_raises():
     def handler(req):
         return httpx.Response(401, text="Unauthorized")
