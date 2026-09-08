@@ -186,6 +186,7 @@ describe('library workflow', () => {
     )
     render(<App />)
     await screen.findByRole('heading', { name: 'Rename your audiobooks' })
+    await screen.findByRole('option', { name: 'Other library' })
     await userEvent.selectOptions(
       screen.getByRole('combobox', { name: 'Audiobook library' }),
       'other',
