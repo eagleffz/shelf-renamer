@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+!.env.example
+.claude
+.codex
+.agents
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/*.db
+**/*.db-*
+**/*.lock
+frontend/package-lock.json
+!frontend/package-lock.json

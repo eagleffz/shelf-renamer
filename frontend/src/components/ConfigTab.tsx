@@ -15,8 +15,12 @@ export function ConfigTab({ config }: Props) {
       .catch(() => setAbsOk(false))
   }, [])
 
-  const defaultEntry = { abs_root: '(fallback)', container_root: config.media_root }
-  const entries = config.volume_map.length > 0 ? config.volume_map : [defaultEntry]
+  const defaultEntry = {
+    abs_root: '(fallback)',
+    container_root: config.media_root,
+  }
+  const entries =
+    config.volume_map.length > 0 ? config.volume_map : [defaultEntry]
 
   return (
     <div className="config-tab">
@@ -25,31 +29,46 @@ export function ConfigTab({ config }: Props) {
         <tbody>
           <tr>
             <td>Version</td>
-            <td><code>{config.version}</code></td>
+            <td>
+              <code>{config.version}</code>
+            </td>
           </tr>
           <tr>
             <td>ABS URL</td>
             <td>
               <code>{config.abs_url}</code>
-              {absOk === null && <span className="cfg-badge cfg-checking">checking…</span>}
-              {absOk === true && <span className="cfg-badge cfg-ok">✓ reachable</span>}
-              {absOk === false && <span className="cfg-badge cfg-error">✗ unreachable</span>}
+              {absOk === null && (
+                <span className="cfg-badge cfg-checking">checking…</span>
+              )}
+              {absOk === true && (
+                <span className="cfg-badge cfg-ok">✓ reachable</span>
+              )}
+              {absOk === false && (
+                <span className="cfg-badge cfg-error">✗ unreachable</span>
+              )}
             </td>
           </tr>
           <tr>
             <td>Auth</td>
-            <td>{config.auth_required ? 'Password protected' : 'Open (no password)'}</td>
+            <td>
+              {config.auth_required
+                ? 'Password protected'
+                : 'Open (no password)'}
+            </td>
           </tr>
           <tr>
             <td>Default template</td>
-            <td><code>{config.default_template}</code></td>
+            <td>
+              <code>{config.default_template}</code>
+            </td>
           </tr>
         </tbody>
       </table>
 
       <h2 className="config-section-title">Volume map</h2>
       <p className="config-hint">
-        Each row maps an ABS-reported library root to the container mount point shelf-renamer uses for filesystem access.
+        Each row maps an ABS-reported library root to the container mount point
+        shelf-renamer uses for filesystem access.
       </p>
       <table className="config-table">
         <thead>
@@ -61,14 +80,20 @@ export function ConfigTab({ config }: Props) {
         <tbody>
           {entries.map((e, i) => (
             <tr key={i}>
-              <td><code>{e.abs_root}</code></td>
-              <td><code>{e.container_root}</code></td>
+              <td>
+                <code>{e.abs_root}</code>
+              </td>
+              <td>
+                <code>{e.container_root}</code>
+              </td>
             </tr>
           ))}
           {config.volume_map.length > 0 && (
             <tr className="cfg-fallback-row">
-              <td><code>(everything else)</code></td>
-              <td><code>{config.media_root}</code> <span className="cfg-badge">fallback</span></td>
+              <td>
+                <code>(unmapped libraries)</code>
+              </td>
+              <td>Blocked — add an explicit mapping before renaming.</td>
             </tr>
           )}
         </tbody>

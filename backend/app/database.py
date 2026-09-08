@@ -15,60 +15,51 @@ CREATE TABLE IF NOT EXISTS rename_history (
 )
 """
 
-# Existing databases predate the unique index and already hold duplicate
-# (book_id, library_id) rows, so they must be collapsed to the newest row per
-# pair before the index can be created.
-_DEDUPE = """
-DELETE FROM rename_history
-WHERE id NOT IN (SELECT MAX(id) FROM rename_history GROUP BY book_id, library_id)
-"""
+# Preserve every rename; older versions used a unique per-book index.
+_DROP_OLD_UNIQUE_INDEX = "DROP INDEX IF EXISTS idx_rename_history_book"
 
 _INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_rename_history_library ON rename_history(library_id)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_rename_history_book ON rename_history(book_id, library_id)",
 ]
-
-_INSERT = (
-    "INSERT OR REPLACE INTO rename_history (book_id, library_id, old_path, new_path) "
-    "VALUES (?, ?, ?, ?)"
-)
 
 
 async def init_db() -> None:
     async with aiosqlite.connect(get_settings().db_path) as db:
         await db.execute(_CREATE)
-        await db.execute(_DEDUPE)
+        await db.execute(_DROP_OLD_UNIQUE_INDEX)
         for stmt in _INDEXES:
             await db.execute(stmt)
-        await db.commit()
-
-
-async def record_renames(entries: list[tuple[str, str, str, str]]) -> None:
-    """Record a batch of successful renames in one connection."""
-    if not entries:
-        return
-    async with aiosqlite.connect(get_settings().db_path) as db:
-        await db.executemany(_INSERT, entries)
+        await db.execute("""CREATE TABLE IF NOT EXISTS operations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, book_id TEXT NOT NULL,
+            library_id TEXT NOT NULL, old_path TEXT NOT NULL, new_path TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', error TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')))
+        """)
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)"
+        )
+        async with db.execute(
+            "SELECT 1 FROM schema_migrations WHERE version=1"
+        ) as cursor:
+            migrated = await cursor.fetchone()
+        if not migrated:
+            await db.execute("""INSERT INTO operations (book_id,library_id,old_path,new_path,status,created_at)
+                SELECT book_id,library_id,old_path,new_path,'succeeded',renamed_at
+                FROM rename_history WHERE old_path != new_path""")
+            await db.execute("INSERT INTO schema_migrations VALUES (1)")
         await db.commit()
 
 
 async def get_renamed_book_ids(library_id: str) -> list[str]:
-    async with aiosqlite.connect(get_settings().db_path) as db:
-        async with db.execute(
+    async with (
+        aiosqlite.connect(get_settings().db_path) as db,
+        db.execute(
             "SELECT DISTINCT book_id FROM rename_history WHERE library_id = ?",
             (library_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
+        ) as cursor,
+    ):
+        rows = await cursor.fetchall()
     return [row[0] for row in rows]
-
-
-async def mark_books_verified(entries: list[tuple[str, str, str]]) -> None:
-    """Record books already in correct location (old_path == new_path)."""
-    if not entries:
-        return
-    async with aiosqlite.connect(get_settings().db_path) as db:
-        await db.executemany(_INSERT, [(bid, lid, path, path) for bid, lid, path in entries])
-        await db.commit()
 
 
 async def clear_library_history(library_id: str) -> int:
@@ -79,3 +70,42 @@ async def clear_library_history(library_id: str) -> int:
         )
         await db.commit()
         return cursor.rowcount
+
+
+async def begin_operation(
+    book_id: str, library_id: str, old_path: str, new_path: str
+) -> int:
+    async with aiosqlite.connect(get_settings().db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO operations (book_id,library_id,old_path,new_path) VALUES (?,?,?,?)",
+            (book_id, library_id, old_path, new_path),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def finish_operation(
+    operation_id: int, success: bool, error: str | None = None
+) -> None:
+    async with aiosqlite.connect(get_settings().db_path) as db:
+        await db.execute(
+            "UPDATE operations SET status=?, error=? WHERE id=?",
+            ("succeeded" if success else "failed", error, operation_id),
+        )
+        if success:
+            await db.execute(
+                "INSERT INTO rename_history (book_id,library_id,old_path,new_path) "
+                "SELECT book_id,library_id,old_path,new_path FROM operations WHERE id=?",
+                (operation_id,),
+            )
+        await db.commit()
+
+
+async def operation_history(library_id: str) -> list[dict]:
+    async with aiosqlite.connect(get_settings().db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM operations WHERE library_id=? ORDER BY id DESC LIMIT 500",
+            (library_id,),
+        ) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]

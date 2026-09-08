@@ -1,5 +1,7 @@
-import pytest
+import json
+
 import httpx
+import pytest
 from app.abs_client import ABSClient, ABSClientError
 
 
@@ -158,4 +160,49 @@ async def test_unauthorized_raises():
     with pytest.raises(ABSClientError) as exc_info:
         await client.get_libraries()
     assert exc_info.value.status_code == 401
+    await client.close()
+
+
+async def test_multiple_library_folders_use_each_items_root():
+    def handler(req):
+        if req.url.path == "/api/libraries":
+            data = _lib_response().json()
+            data["libraries"][0]["folders"].append({"fullPath": "/abs/second"})
+            return httpx.Response(200, json=data)
+        data = _items_response().json()
+        data["results"][0]["path"] = "/abs/second/A Book"
+        return httpx.Response(200, json=data)
+
+    client = _make_client(httpx.MockTransport(handler))
+    assert (await client.get_library_items("lib1"))[0].abs_library_root == "/abs/second"
+    await client.close()
+
+
+async def test_series_update_preserves_other_memberships():
+    patched = []
+
+    def handler(req):
+        if req.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "media": {
+                        "metadata": {
+                            "series": [
+                                {"id": "first", "name": "Series", "sequence": "1"},
+                                {"id": "other", "name": "Collection", "sequence": "9"},
+                            ]
+                        }
+                    }
+                },
+            )
+        patched.append(json.loads(req.content))
+        return httpx.Response(200, json={})
+
+    client = _make_client(httpx.MockTransport(handler))
+    assert await client.update_series_index("book", "first", "Series", "2")
+    assert patched[0]["metadata"]["series"] == [
+        {"id": "first", "name": "Series", "sequence": "2"},
+        {"id": "other", "name": "Collection", "sequence": "9"},
+    ]
     await client.close()

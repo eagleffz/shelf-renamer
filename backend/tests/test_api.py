@@ -1,11 +1,11 @@
 import sqlite3
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.main import app
 from app.models import Author, BookMetadata, Library
+from fastapi.testclient import TestClient
 
 
 def _make_book() -> BookMetadata:
@@ -88,7 +88,9 @@ def test_preview_spans_multiple_libraries(client):
     by_library = {"lib1": [book1], "lib2": [book2]}
 
     with patch.object(app.state, "abs") as mock_abs:
-        mock_abs.get_library_items = AsyncMock(side_effect=lambda lib_id, *a, **kw: by_library[lib_id])
+        mock_abs.get_library_items = AsyncMock(
+            side_effect=lambda lib_id, *a, **kw: by_library[lib_id]
+        )
         r = client.post(
             "/api/preview",
             json={
@@ -105,7 +107,7 @@ def test_preview_spans_multiple_libraries(client):
     assert [i["library_id"] for i in items] == ["lib1", "lib2"]
 
 
-def test_verify_twice_keeps_one_row(client):
+def test_client_cannot_mark_arbitrary_paths_verified(client):
     payload = {
         "items": [
             {
@@ -115,19 +117,20 @@ def test_verify_twice_keeps_one_row(client):
             }
         ]
     }
-    assert client.post("/api/libraries/libverify/verify", json=payload).status_code == 200
-    assert client.post("/api/libraries/libverify/verify", json=payload).status_code == 200
+    assert (
+        client.post("/api/libraries/libverify/verify", json=payload).status_code == 404
+    )
 
     r = client.get("/api/libraries/libverify/history")
     assert r.status_code == 200
-    assert r.json() == ["verify1"]
+    assert r.json() == []
 
     # DISTINCT would hide a duplicate — check the table itself.
     with sqlite3.connect(get_settings().db_path) as db:
         rows = db.execute(
             "SELECT COUNT(*) FROM rename_history WHERE library_id = ?", ("libverify",)
         ).fetchone()[0]
-    assert rows == 1
+    assert rows == 0
 
 
 def test_preview_empty_template(client):
@@ -138,7 +141,7 @@ def test_preview_empty_template(client):
     assert r.status_code == 422
 
 
-def test_rename_dry_run(client):
+def test_rename_dry_run_rejects_missing_source(client):
     book = _make_book()
     with patch.object(app.state, "abs") as mock_abs:
         mock_abs.get_library_items = AsyncMock(return_value=[book])
@@ -157,7 +160,5 @@ def test_rename_dry_run(client):
                 ],
             },
         )
-    assert r.status_code == 200
-    data = r.json()
-    assert data["results"][0]["success"] is True
-    assert data["scan_triggered"] is False  # dry_run → no scan
+    assert r.status_code == 409
+    mock_abs.trigger_scan.assert_not_awaited()

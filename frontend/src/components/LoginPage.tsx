@@ -15,8 +15,8 @@ export function LoginPage({ onLogin }: Props) {
     setLoading(true)
     try {
       await onLogin(password)
-    } catch {
-      setError('Invalid password')
+    } catch (e) {
+      setError((e as Error).message)
     } finally {
       setLoading(false)
     }
@@ -30,13 +30,22 @@ export function LoginPage({ onLogin }: Props) {
           <input
             className="login-input"
             type="password"
+            aria-label="Password"
+            autoComplete="current-password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoFocus
           />
-          {error && <p className="login-error">{error}</p>}
-          <button className="btn btn-primary login-btn" disabled={!password || loading}>
+          {error && (
+            <p className="login-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button
+            className="btn btn-primary login-btn"
+            disabled={!password || loading}
+          >
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>

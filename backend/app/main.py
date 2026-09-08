@@ -1,22 +1,35 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import logging
 import os
 from contextlib import asynccontextmanager
-from functools import lru_cache
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .abs_client import ABSClient, ABSClientError
-from .auth import init_auth, require_auth, verify_password
+from .auth import (
+    COOKIE,
+    SESSION_SECONDS,
+    init_auth,
+    require_auth,
+    revoke_session,
+    verify_password,
+)
 from .config import get_settings
-from .database import clear_library_history, get_renamed_book_ids, init_db, mark_books_verified, record_renames
+from .database import (
+    begin_operation,
+    clear_library_history,
+    finish_operation,
+    get_renamed_book_ids,
+    init_db,
+    operation_history,
+)
 from .models import (
-    BookMetadata,
-    CleanupResponse,
     LoginRequest,
     PreviewItem,
     PreviewRequest,
@@ -25,9 +38,9 @@ from .models import (
     RenameResult,
     SeriesUpdateRequest,
     SeriesUpdateResult,
-    VerifyRequest,
 )
-from .renamer import render_path_template, safe_rename, RenameError
+from .planner import _resolve_paths, _sorted_volume_map, build_plan, matches_plan
+from .renamer import RenameError, safe_rename, validate_path
 
 logging.basicConfig(level=get_settings().log_level)
 logger = logging.getLogger(__name__)
@@ -37,6 +50,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.abs = ABSClient(settings.abs_url, settings.abs_token)
+    app.state.mutation_lock = asyncio.Lock()
     init_auth()
     await init_db()
     yield
@@ -44,87 +58,116 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="shelf-renamer", lifespan=lifespan)
-
-settings = get_settings()
-if settings.debug:
+if get_settings().debug:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173"],
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=True,
     )
+
+
+@app.middleware("http")
+async def same_origin_mutations(request: Request, call_next):
+    # SameSite cookies plus Origin checks protect cookie-authenticated writes.
+    origin = request.headers.get("origin")
+    allowed = {str(request.base_url).rstrip("/")}
+    if get_settings().debug:
+        allowed.add("http://localhost:5173")
+    if (
+        request.method not in {"GET", "HEAD", "OPTIONS"}
+        and origin
+        and origin not in allowed
+    ):
+        return Response("Cross-origin writes are not allowed", status_code=403)
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    )
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _client() -> ABSClient:
     return app.state.abs
 
 
-def _apply_overrides(book: BookMetadata, overrides: dict | None) -> BookMetadata:
-    if not overrides:
-        return book
-    data = book.model_dump()
-    if overrides.get("author"):
-        data["authors"] = [{"id": "override", "name": overrides["author"]}]
-    for src, dst in [("title", "title"), ("series", "series"), ("narrator", "narrator"), ("year", "published_year")]:
-        if src in overrides:
-            data[dst] = overrides[src] or None
-    if "series_index" in overrides:
-        try:
-            data["series_index"] = float(overrides["series_index"]) if overrides["series_index"] else None
-        except (ValueError, TypeError):
-            pass
-    return BookMetadata(**data)
+@asynccontextmanager
+async def mutation_lock():
+    async with app.state.mutation_lock:
+        # Coordinates rename, metadata updates, and cleanup across processes too.
+        with await asyncio.to_thread(
+            open, get_settings().db_path + ".lock", "a"
+        ) as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise HTTPException(
+                    409, "Another operation is running. Please retry shortly."
+                )
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-@lru_cache
-def _sorted_volume_map() -> tuple[tuple[str, str], ...]:
-    """VOLUME_MAP parsed once, longest ABS root first so the longest match wins."""
-    return tuple(
-        sorted(get_settings().parsed_volume_map(), key=lambda x: len(x[0]), reverse=True)
-    )
-
-
-def _resolve_paths(abs_path: str, abs_library_root: str) -> tuple[str, str]:
-    """Return (container_path, container_root) for an ABS-host path."""
-    for abs_root, container_root in _sorted_volume_map():
-        if abs_path == abs_root or abs_path.startswith(abs_root + "/"):
-            rel = os.path.relpath(abs_path, abs_root)
-            return os.path.join(container_root, rel), container_root
-    # Fallback: replace abs_library_root with media_root (original behaviour)
-    media_root = get_settings().media_root
-    try:
-        rel = os.path.relpath(abs_path, abs_library_root)
-    except ValueError:
-        rel = abs_path.lstrip("/")
-    return os.path.join(media_root, rel), media_root
+@app.get("/api/live")
+async def live():
+    return {"status": "ok"}
 
 
 @app.get("/api/health")
 async def health():
-    reachable = await _client().ping()
-    return {"status": "ok", "abs_reachable": reachable}
+    return {"status": "ok", "abs_reachable": await _client().ping()}
 
 
 @app.get("/api/config")
 async def config():
     s = get_settings()
-    volume_map = s.parsed_volume_map()
     return {
         "default_template": s.default_template,
         "auth_required": bool(s.app_password),
         "version": s.app_version,
         "abs_url": s.abs_url,
         "media_root": s.media_root,
-        "volume_map": [{"abs_root": a, "container_root": c} for a, c in volume_map],
+        "volume_map": [
+            {"abs_root": a, "container_root": c} for a, c in s.parsed_volume_map()
+        ],
     }
 
 
 @app.post("/api/auth/login")
-async def login(req: LoginRequest):
-    token = verify_password(req.password)
+async def login(req: LoginRequest, request: Request, response: Response):
+    token = verify_password(
+        req.password, request.client.host if request.client else "unknown"
+    )
     if token is None:
-        raise HTTPException(status_code=401, detail="Invalid password")
-    return {"token": token}
+        raise HTTPException(401, "Invalid password")
+    response.set_cookie(
+        COOKIE,
+        token,
+        httponly=True,
+        samesite="strict",
+        secure=request.url.scheme == "https",
+        max_age=SESSION_SECONDS,
+    )
+    return {"authenticated": True}
+
+
+@app.get("/api/auth/session", dependencies=[Depends(require_auth)])
+async def session():
+    return {"authenticated": True}
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response):
+    revoke_session(request)
+    response.delete_cookie(COOKIE)
+    return {"authenticated": False}
 
 
 @app.get("/api/libraries", dependencies=[Depends(require_auth)])
@@ -132,22 +175,23 @@ async def libraries():
     try:
         return await _client().get_libraries()
     except ABSClientError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.detail)
+        raise HTTPException(e.status_code if e.status_code != 401 else 502, e.detail)
 
 
 @app.get("/api/libraries/{library_id}/books", dependencies=[Depends(require_auth)])
-async def books(library_id: str):
+async def books(library_id: str, refresh: bool = False):
     try:
-        return await _client().get_library_items(library_id)
+        return await _client().get_library_items(library_id, use_cache=not refresh)
     except ABSClientError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.detail)
+        raise HTTPException(e.status_code if e.status_code != 401 else 502, e.detail)
 
 
 @app.post("/api/libraries/{library_id}/scan", dependencies=[Depends(require_auth)])
 async def scan_library(library_id: str):
-    ok = await _client().trigger_scan(library_id)
-    if not ok:
-        raise HTTPException(status_code=502, detail="ABS scan request failed")
+    if not await _client().trigger_scan(library_id):
+        raise HTTPException(
+            502, "ABS scan request failed. Check the ABS connection and token."
+        )
     return {"triggered": True}
 
 
@@ -156,189 +200,207 @@ async def history(library_id: str):
     return await get_renamed_book_ids(library_id)
 
 
+@app.get("/api/libraries/{library_id}/operations", dependencies=[Depends(require_auth)])
+async def operations(library_id: str):
+    return await operation_history(library_id)
+
+
 @app.delete("/api/libraries/{library_id}/history", dependencies=[Depends(require_auth)])
 async def delete_history(library_id: str):
-    cleared = await clear_library_history(library_id)
-    return {"cleared": cleared}
+    return {"cleared": await clear_library_history(library_id)}
 
 
-@app.post("/api/batch/series", response_model=list[SeriesUpdateResult], dependencies=[Depends(require_auth)])
+@app.post(
+    "/api/batch/series",
+    response_model=list[SeriesUpdateResult],
+    dependencies=[Depends(require_auth)],
+)
 async def batch_update_series(req: SeriesUpdateRequest):
     sem = asyncio.Semaphore(8)
 
-    async def _one(item) -> SeriesUpdateResult:
+    async def one(item):
         async with sem:
-            ok = await _client().update_series_index(
-                item.book_id, item.series_id, item.series_name, item.sequence
-            )
-            return SeriesUpdateResult(book_id=item.book_id, success=ok)
-
-    # gather preserves input order.
-    return list(await asyncio.gather(*(_one(i) for i in req.items)))
-
-
-@app.post("/api/libraries/{library_id}/verify", dependencies=[Depends(require_auth)])
-async def verify_books(library_id: str, req: VerifyRequest):
-    entries = [(item.book_id, item.library_id, item.current_path) for item in req.items]
-    await mark_books_verified(entries)
-    return {"marked": len(entries)}
-
-
-@app.post("/api/preview", response_model=list[PreviewItem], dependencies=[Depends(require_auth)])
-async def preview(req: PreviewRequest):
-    if not req.template.strip():
-        raise HTTPException(status_code=422, detail="Template must not be empty")
-    library_ids = {item["library_id"] for item in req.items if item.get("library_id")}
-    book_map: dict[str, BookMetadata] = {}
-    for lib_id in library_ids:
-        try:
-            for b in await _client().get_library_items(lib_id):
-                book_map[b.id] = b
-        except ABSClientError:
-            continue  # preview is best-effort; a dead library yields no rows for its books
-
-    results: list[PreviewItem] = []
-
-    for item in req.items:
-        book = book_map.get(item["book_id"])
-        if not book:
-            continue
-        book = _apply_overrides(book, item.get("overrides"))
-        container_path, lib_root = _resolve_paths(book.abs_path, book.abs_library_root)
-        proposed_path = render_path_template(req.template, book, lib_root)
-        results.append(
-            PreviewItem(
-                book_id=book.id,
-                library_id=book.library_id,
-                current_name=os.path.relpath(container_path, lib_root),
-                proposed_name=os.path.relpath(proposed_path, lib_root),
-                current_path=container_path,
-                proposed_path=proposed_path,
-                conflict=False,
-                no_change=container_path == proposed_path,
-            )
-        )
-
-    # One thread hop for all conflict checks instead of a blocking stat per book.
-    pending = [r for r in results if not r.no_change]
-    if pending:
-        exists = await asyncio.to_thread(
-            lambda: [os.path.exists(r.proposed_path) for r in pending]
-        )
-        for result, found in zip(pending, exists):
-            result.conflict = found
-
-    return results
-
-
-@app.post("/api/rename", response_model=RenameResponse, dependencies=[Depends(require_auth)])
-async def rename(req: RenameRequest):
-    if not req.template.strip():
-        raise HTTPException(status_code=422, detail="Template must not be empty")
-
-    library_ids = {item.library_id for item in req.items}
-    books_by_id: dict[str, object] = {}
-    for lib_id in library_ids:
-        try:
-            # Renaming mutates disk, so it must see ABS truth rather than the cache.
-            lib_books = await _client().get_library_items(lib_id, use_cache=False)
-            for b in lib_books:
-                books_by_id[b.id] = b
-        except ABSClientError as e:
-            raise HTTPException(status_code=e.status_code, detail=e.detail)
-
-    results: list[RenameResult] = []
-    renamed_library_ids: set[str] = set()
-    history_entries: list[tuple[str, str, str, str]] = []
-
-    for item in req.items:
-        book = books_by_id.get(item.book_id)
-        if not book:
-            results.append(
-                RenameResult(
+            try:
+                ok = await _client().update_series_index(
+                    item.book_id, item.series_id, item.series_name, item.sequence
+                )
+                return SeriesUpdateResult(
                     book_id=item.book_id,
-                    success=False,
-                    error="Book not found in ABS",
-                    old_path=item.current_path,
-                    new_path=item.current_path,
+                    success=ok,
+                    error=None if ok else "ABS rejected this update",
                 )
-            )
-            continue
-
-        book = _apply_overrides(book, item.overrides)
-        container_path, lib_root = _resolve_paths(book.abs_path, book.abs_library_root)
-        proposed_path = render_path_template(req.template, book, lib_root)
-
-        if req.dry_run or container_path == proposed_path:
-            results.append(
-                RenameResult(
-                    book_id=book.id,
-                    success=True,
-                    old_path=container_path,
-                    new_path=proposed_path,
+            except ABSClientError as e:
+                return SeriesUpdateResult(
+                    book_id=item.book_id, success=False, error=e.detail
                 )
-            )
-            continue
 
+    async with mutation_lock():
+        return list(await asyncio.gather(*(one(item) for item in req.items)))
+
+
+@app.post(
+    "/api/preview",
+    response_model=list[PreviewItem],
+    dependencies=[Depends(require_auth)],
+)
+async def preview(req: PreviewRequest):
+    try:
+        return await build_plan(_client(), req.template, req.items)
+    except RenameError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.post(
+    "/api/rename", response_model=RenameResponse, dependencies=[Depends(require_auth)]
+)
+async def rename(req: RenameRequest):
+    async with mutation_lock():
         try:
-            await asyncio.to_thread(safe_rename, container_path, proposed_path)
-            renamed_library_ids.add(item.library_id)
-            history_entries.append((book.id, item.library_id, container_path, proposed_path))
-            results.append(
-                RenameResult(
-                    book_id=book.id,
-                    success=True,
-                    old_path=container_path,
-                    new_path=proposed_path,
-                )
-            )
+            plan = await build_plan(_client(), req.template, req.items, fresh=True)
         except RenameError as e:
-            results.append(
-                RenameResult(
-                    book_id=book.id,
-                    success=False,
-                    error=str(e),
-                    old_path=container_path,
-                    new_path=proposed_path,
+            raise HTTPException(422, str(e))
+        for item, planned in zip(req.items, plan):
+            if planned.conflict:
+                raise HTTPException(409, f"Preview again: {planned.error}")
+            if not req.dry_run and (
+                item.current_path != planned.current_path
+                or not matches_plan(item.preview_token, planned.preview_token)
+            ):
+                raise HTTPException(
+                    409,
+                    "The preview expired or the book, template, or path changed. Preview again before renaming.",
                 )
+
+        results, changed, scan_errors = [], set(), []
+        for item, planned in zip(req.items, plan):
+            result = RenameResult(
+                book_id=item.book_id,
+                success=False,
+                old_path=planned.current_path,
+                new_path=planned.proposed_path,
             )
+            if req.dry_run or planned.no_change:
+                result.success = True
+                results.append(result)
+                continue
+            operation_id = None
+            try:
+                # Commit intent before touching disk. A crash leaves a visible
+                # pending operation for manual reconciliation, never a blind retry.
+                operation_id = await begin_operation(
+                    item.book_id,
+                    item.library_id,
+                    planned.current_path,
+                    planned.proposed_path,
+                )
+                # Use the longest mapped root that contains this validated path.
+                roots = [os.path.realpath(c) for _, c in _sorted_volume_map()] or [
+                    os.path.realpath(get_settings().media_root)
+                ]
+                root = max(
+                    (
+                        r
+                        for r in roots
+                        if planned.current_path.startswith(r + os.sep)
+                        and planned.proposed_path.startswith(r + os.sep)
+                    ),
+                    key=len,
+                )
+                await asyncio.to_thread(
+                    safe_rename, planned.current_path, planned.proposed_path, root
+                )
+                result.success = True
+                changed.add(item.library_id)
+                await finish_operation(operation_id, True)
+            except Exception as e:
+                logger.exception("Rename operation failed for %s", item.book_id)
+                result.error = (
+                    f"Moved, but could not finish history: {e}"
+                    if result.success
+                    else str(e)
+                )
+                if operation_id is not None and not result.success:
+                    try:
+                        await finish_operation(operation_id, False, str(e))
+                    except Exception:
+                        logger.exception(
+                            "Could not record failed operation %s", operation_id
+                        )
+            results.append(result)
 
-    # One write for the whole batch. If the process dies mid-run the files are moved
-    # but this run's history is lost — the background verify repopulates it.
-    await record_renames(history_entries)
-
-    scan_triggered = False
-    if not req.dry_run and renamed_library_ids:
-        for lib_id in renamed_library_ids:
-            ok = await _client().trigger_scan(lib_id)
-            if ok:
-                scan_triggered = True
-
-    return RenameResponse(results=results, scan_triggered=scan_triggered)
+        scanned = False
+        for library_id in changed:
+            if await _client().trigger_scan(library_id):
+                scanned = True
+            else:
+                scan_errors.append(library_id)
+        return RenameResponse(
+            results=results, scan_triggered=scanned, scan_errors=scan_errors
+        )
 
 
-@app.post("/api/cleanup", response_model=CleanupResponse, dependencies=[Depends(require_auth)])
-def cleanup_empty_dirs():
-    # Plain def, not async: FastAPI runs it in the threadpool so the os.walk over the
-    # whole media root does not stall the event loop.
-    root = get_settings().media_root
-    removed: list[str] = []
-    for dirpath, _dirnames, _filenames in os.walk(root, topdown=False):
-        if dirpath == root:
-            continue
-        try:
-            # Re-read the directory: with topdown=False os.walk's dirnames are stale,
-            # so a child removed earlier still appears there. This is what makes the
-            # removal cascade up the tree.
-            if not os.listdir(dirpath):
-                os.rmdir(dirpath)
-                removed.append(os.path.relpath(dirpath, root))
-        except OSError:
-            pass
-    return CleanupResponse(removed=removed)
+class CleanupRequest(BaseModel):
+    library_id: str
+    dry_run: bool = True
+    paths: list[str] = []
 
 
-# Serve built frontend — must be last
+def _empty_dirs(roots: list[str]) -> list[str]:
+    empty = set()
+    for root in roots:
+        for path, dirs, files in os.walk(root, topdown=False, followlinks=False):
+            if path == root or os.path.islink(path):
+                continue
+            if not files and all(os.path.join(path, d) in empty for d in dirs):
+                empty.add(path)
+    return sorted(empty, key=lambda p: (-p.count(os.sep), p))
+
+
+@app.post("/api/cleanup", dependencies=[Depends(require_auth)])
+async def cleanup(req: CleanupRequest):
+    try:
+        libraries = await _client().get_libraries()
+        library = next((lib for lib in libraries if lib.id == req.library_id), None)
+        if not library:
+            raise HTTPException(404, "Library not found")
+        roots = list(
+            {
+                _resolve_paths(root.rstrip("/") + "/.cleanup-check", root)[1]
+                for root in library.folders
+            }
+        )
+    except (ABSClientError, RenameError) as e:
+        raise HTTPException(422, str(e))
+    async with mutation_lock():
+        candidates = await asyncio.to_thread(_empty_dirs, roots)
+        if req.dry_run:
+            return {"removed": [], "candidates": candidates, "errors": []}
+        if not set(req.paths).issubset(candidates):
+            raise HTTPException(409, "Folders changed. Preview cleanup again.")
+
+        def remove():
+            removed, errors = [], []
+            for path in candidates:
+                if path not in req.paths:
+                    continue
+                try:
+                    root = max(
+                        (root for root in roots if path.startswith(root + os.sep)),
+                        key=len,
+                    )
+                    validate_path(path, root)
+                    from .renamer import _parent_fd
+
+                    with _parent_fd(root, path) as parent:
+                        os.rmdir(os.path.basename(path), dir_fd=parent)
+                    removed.append(path)
+                except (OSError, RenameError) as e:
+                    errors.append(f"{path}: {e}")
+            return {"removed": removed, "candidates": [], "errors": errors}
+
+        return await asyncio.to_thread(remove)
+
+
 _frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.isdir(_frontend_dist):
     app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="static")

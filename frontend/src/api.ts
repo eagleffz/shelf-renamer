@@ -34,6 +34,9 @@ export interface PreviewItem {
   proposed_path: string
   conflict: boolean
   no_change: boolean
+  error: string | null
+  warnings: string[]
+  preview_token: string
 }
 
 export interface RenameItem {
@@ -41,6 +44,7 @@ export interface RenameItem {
   library_id: string
   current_path: string
   overrides?: Record<string, string>
+  preview_token: string
 }
 
 export interface RenameResult {
@@ -54,6 +58,7 @@ export interface RenameResult {
 export interface RenameResponse {
   results: RenameResult[]
   scan_triggered: boolean
+  scan_errors: string[]
 }
 
 export interface VolumeMapEntry {
@@ -72,12 +77,12 @@ export interface AppConfig {
 
 const TOKEN_KEY = 'shelf-renamer-token'
 
-export const getAuthToken = () => localStorage.getItem(TOKEN_KEY) ?? ''
-export const setAuthToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
 export const clearAuthToken = () => localStorage.removeItem(TOKEN_KEY)
 
 let _onUnauthorized: (() => void) | null = null
-export const setUnauthorizedHandler = (fn: () => void) => { _onUnauthorized = fn }
+export const setUnauthorizedHandler = (fn: () => void) => {
+  _onUnauthorized = fn
+}
 
 class ApiError extends Error {
   status: number
@@ -88,9 +93,7 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = getAuthToken()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(path, { headers, ...options })
   if (!res.ok) {
@@ -99,34 +102,61 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       _onUnauthorized()
     }
     const text = await res.text()
-    throw new ApiError(res.status, text)
+    let message = text || `Request failed (${res.status})`
+    try {
+      const body = JSON.parse(text)
+      message =
+        typeof body.detail === 'string'
+          ? body.detail
+          : Array.isArray(body.detail)
+            ? body.detail.map((d: { msg: string }) => d.msg).join('; ')
+            : message
+    } catch {
+      /* Non-JSON upstream error. */
+    }
+    throw new ApiError(res.status, message)
   }
   return res.json()
 }
 
 export const fetchConfig = () => request<AppConfig>('/api/config')
+export const fetchSession = () => request('/api/auth/session')
+export const logout = () => request('/api/auth/logout', { method: 'POST' })
 
 export const login = (password: string) =>
-  request<{ token: string }>('/api/auth/login', {
+  request<{ authenticated: boolean }>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ password }),
   })
 
 export const fetchLibraries = () => request<Library[]>('/api/libraries')
 
-export const fetchBooks = (libraryId: string) =>
-  request<BookMetadata[]>(`/api/libraries/${libraryId}/books`)
+export const fetchBooks = (
+  libraryId: string,
+  refresh = false,
+  signal?: AbortSignal,
+) =>
+  request<BookMetadata[]>(
+    `/api/libraries/${libraryId}/books?refresh=${refresh}`,
+    { signal },
+  )
 
 export const fetchHistory = (libraryId: string) =>
   request<string[]>(`/api/libraries/${libraryId}/history`)
 
 export const previewRename = (
   template: string,
-  items: { book_id: string; library_id: string; overrides?: Record<string, string> }[],
+  items: {
+    book_id: string
+    library_id: string
+    overrides?: Record<string, string>
+  }[],
+  signal?: AbortSignal,
 ) =>
   request<PreviewItem[]>('/api/preview', {
     method: 'POST',
     body: JSON.stringify({ template, items }),
+    signal,
   })
 
 export const confirmRename = (template: string, items: RenameItem[]) =>
@@ -135,28 +165,53 @@ export const confirmRename = (template: string, items: RenameItem[]) =>
     body: JSON.stringify({ template, items, dry_run: false }),
   })
 
-export const cleanupEmptyDirs = () =>
-  request<{ removed: string[] }>('/api/cleanup', { method: 'POST' })
+export const cleanupEmptyDirs = (libraryId: string, paths?: string[]) =>
+  request<{ removed: string[]; candidates: string[]; errors: string[] }>(
+    '/api/cleanup',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        library_id: libraryId,
+        dry_run: paths === undefined,
+        paths: paths ?? [],
+      }),
+    },
+  )
 
 export const scanLibrary = (libraryId: string) =>
-  request<{ triggered: boolean }>(`/api/libraries/${libraryId}/scan`, { method: 'POST' })
+  request<{ triggered: boolean }>(`/api/libraries/${libraryId}/scan`, {
+    method: 'POST',
+  })
 
 export const clearHistory = (libraryId: string) =>
-  request<{ cleared: number }>(`/api/libraries/${libraryId}/history`, { method: 'DELETE' })
+  request<{ cleared: number }>(`/api/libraries/${libraryId}/history`, {
+    method: 'DELETE',
+  })
 
 export const batchUpdateSeries = (
-  items: { book_id: string; series_id: string | null; series_name: string; sequence: string }[],
+  items: {
+    book_id: string
+    series_id: string | null
+    series_name: string
+    sequence: string
+  }[],
 ) =>
-  request<{ book_id: string; success: boolean }[]>('/api/batch/series', {
-    method: 'POST',
-    body: JSON.stringify({ items }),
-  })
+  request<{ book_id: string; success: boolean; error: string | null }[]>(
+    '/api/batch/series',
+    {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    },
+  )
 
-export const verifyBooks = (
-  libraryId: string,
-  items: { book_id: string; library_id: string; current_path: string }[],
-) =>
-  request<{ marked: number }>(`/api/libraries/${libraryId}/verify`, {
-    method: 'POST',
-    body: JSON.stringify({ items }),
-  })
+export interface Operation {
+  id: number
+  book_id: string
+  old_path: string
+  new_path: string
+  status: 'pending' | 'succeeded' | 'failed'
+  error: string | null
+  created_at: string
+}
+export const fetchOperations = (libraryId: string) =>
+  request<Operation[]>(`/api/libraries/${libraryId}/operations`)

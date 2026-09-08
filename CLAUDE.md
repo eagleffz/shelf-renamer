@@ -12,7 +12,7 @@ shelf-renamer is a web app for renaming audiobook folders/files managed by [Audi
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # Dev server (port 8000), hot-reload
 DB_PATH=./shelf-renamer.db uvicorn app.main:app --reload
@@ -30,6 +30,7 @@ npm install
 npm run dev      # Vite dev server on :5173, proxies /api → :8000
 npm run build    # tsc -b && vite build
 npm run lint     # eslint
+npm test         # frontend interaction regressions
 ```
 
 **Docker** (production):
@@ -54,7 +55,7 @@ Single Docker container: FastAPI backend serves built frontend static files from
 | `auth.py` | Optional password auth — generates a session token on startup, verifies Bearer tokens |
 | `database.py` | aiosqlite — single `rename_history` table tracking successful renames |
 
-**Path translation**: ABS reports absolute paths on the ABS host. The backend maps these to container paths via `_container_path()` in `main.py`, which replaces the ABS library root with `settings.media_root` (defaults to `/media`).
+**Path translation and safety**: `planner.py` resolves each item's actual library folder, enforces explicit volume mappings and root containment, detects batch collisions, and signs previews. Rename execution validates the same metadata, overrides, paths, and source identity before writing. `renamer.py` uses atomic no-overwrite operations and rejects symlinks inside libraries.
 
 **Template rendering** (`renamer.py`): Templates like `{author_lf}/{series}/{series_index_tag} - {title}` are split on `/` into segments. Each segment is formatted, sanitized (forbidden filename chars → space), and cleaned (empty parens/brackets, trailing separators). Empty segments are dropped. For file items (`is_file=True`), the original extension is appended to the last segment.
 
@@ -67,9 +68,9 @@ Single-page app with three phases managed in `App.tsx`:
 - `preview` — diff view (`PreviewTable`) with per-book field overrides
 - `results` — success/error summary (`ResultsPane`)
 
-All API calls live in `api.ts`. Auth token stored in `localStorage` under `shelf-renamer-token`. A 401 response clears the token and triggers re-authentication via `setUnauthorizedHandler`.
+All API calls live in `api.ts`. Auth uses a revocable HttpOnly cookie with a 12-hour expiry. A 401 triggers re-authentication. Presets and the selected library are stored in browser localStorage; credentials are not. The supported server deployment uses one worker.
 
-Background debounced preview (700ms) runs on every template/book change in `App.tsx` to populate `alreadyCorrectIds` — used to power the "Show changes" filter without a separate user action.
+Background debounced previews (500ms) classify the current template without history writes. Abort guards discard stale responses. All / Needs changes / Matches filters are independent of previously-renamed history badges. Batch editor state remains mounted across tab changes.
 
 ### Key data flow
 

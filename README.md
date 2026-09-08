@@ -1,95 +1,80 @@
 # shelf-renamer
 
-Web app for clean file-level renaming of audiobooks in [Audiobookshelf](https://www.audiobookshelf.org/). Fetches metadata via ABS API, lets you define a naming template, previews proposed renames, then renames the folders on disk and triggers an ABS re-scan.
+Rename audiobook folders and single-file items managed by [Audiobookshelf](https://www.audiobookshelf.org/). Choose a naming template, review proposed paths, apply changes, and request an ABS rescan.
 
 ## Features
 
-- Connects to any Audiobookshelf instance via API token
-- Configurable naming template with live preview (e.g. `{author_lf}/{series}/{series_index_tag} - {title}`)
-- Folder breadcrumb diff view before any changes — conflict detection included
-- Rename history tracked in SQLite — books renamed before get a ✓ indicator; history clearable per library
-- Toggle button switches between "needs renaming" (default) and "already done" views
-- Title search input to filter the book list by title
-- **Batch Editor** tab — select a series (ABS embedded-number names like "Bobiverse #1" are normalized to "Bobiverse"), shows only books of that series, reorder via drag & drop or type sequence numbers, sortable columns, current ABS position always visible, save back to ABS in one click
-- Books already in the correct location are automatically marked as done and persisted to history
-- Single-file items (`.m4b`, `.mp3`, etc.) always placed in a subfolder — never left bare in the library root
-- "root" badge in the book list flags file items sitting directly in the library root
-- Optional password protection via `APP_PASSWORD`
-- Atomic folder renames on the mounted filesystem
-- Triggers ABS library re-scan after rename
-- Runs as a single Docker container (amd64 + arm64)
+- Validated naming templates, example output, metadata warnings, and presets saved per library in your browser.
+- Folder breadcrumb preview with duplicate and overlapping path detection across the batch.
+- Signed previews expire after 30 minutes; changed metadata, overrides, or source paths require a new preview.
+- All / Needs changes / Matches filters reflect the current template. A separate History badge indicates earlier renames.
+- Search by title, author, or series; selection counts include books hidden by filters.
+- Batch Editor: select a series, sort and auto-number or edit positions, preserve edits across tabs, and retry failed rows. Updates preserve other series memberships.
+- Persistent operation history with full paths, per-book results, and interrupted-operation records.
+- Library maintenance includes a review of empty folders before deletion and explicit rescan recovery.
+- Atomic renames that cannot overwrite an existing destination. Symlinks inside libraries are rejected.
+- Optional password protection with expiring, revocable sessions.
+- Single Docker container for Linux amd64 and arm64.
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-# Edit .env — set ABS_URL, ABS_TOKEN, AUDIOBOOK_PATH at minimum
-docker compose up
+# Set ABS_URL, ABS_TOKEN, and AUDIOBOOK_PATH in .env
+docker compose up -d
 ```
 
-Open [http://localhost:8000](http://localhost:8000).
+Open [localhost:8000](http://localhost:8000). Choose a library, select books, and click Preview. Review the destination paths before clicking Rename. Blocked books are excluded. Filename overrides only affect the rename; the Batch Editor edits ABS series metadata.
 
 ## Configuration
 
-All config via environment variables or `.env` file:
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ABS_URL` | `http://localhost:13378` | Audiobookshelf base URL; configure for your instance |
+| `ABS_TOKEN` | empty | ABS API token with access to the library and metadata updates |
+| `AUDIOBOOK_PATH` | required by Compose | Host path mounted at `/media` |
+| `MEDIA_ROOT` | `/media` | Container path for single-volume fallback |
+| `VOLUME_MAP` | empty | Explicit `ABS_ROOT=CONTAINER_ROOT` mappings, comma-separated |
+| `DEFAULT_TEMPLATE` | `{author_lf}/{series}/{series_index_tag} - {title}` in backend; `{author} - {title} ({year})` in Compose | Initial template unless a browser preset was saved |
+| `APP_PASSWORD` | empty | Enable login; empty disables authentication |
+| `DB_PATH` | `/data/shelf-renamer.db` | Persistent SQLite database |
+| `UID` / `GID` | `1000` / `1000` in Compose | Must have permission to write the mounted library |
+| `LOG_LEVEL` | `INFO` | Server logging level |
+| `DEBUG` | `false` | Permit the local Vite development origin |
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ABS_URL` | yes | — | Audiobookshelf base URL, e.g. `http://192.168.1.10:13378` |
-| `ABS_TOKEN` | yes | — | ABS API token (Settings → Users → your user → API Token) |
-| `AUDIOBOOK_PATH` | yes | — | Host path to primary audiobook library, mounted at `/media` in container |
-| `VOLUME_MAP` | no | _(empty)_ | Extra library mappings — see [Multiple libraries](#multiple-libraries) |
-| `DEFAULT_TEMPLATE` | no | `{author} - {title} ({year})` | Default naming template shown in the UI |
-| `APP_PASSWORD` | no | _(empty — auth disabled)_ | Set to enable login page with password protection |
-| `DB_PATH` | no | `/data/shelf-renamer.db` | SQLite database path (inside the container) |
-| `UID` / `GID` | no | `1000` / `1000` | UID/GID used to write files — must match owner of `AUDIOBOOK_PATH` |
-| `LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+### Multiple libraries and folders
 
-### Multiple libraries
-
-If your ABS instance has libraries stored at different host paths, mount each path as a separate volume and set `VOLUME_MAP` to tell the app how ABS paths map to container mount points.
-
-**Format:** `ABS_HOST_PATH=CONTAINER_PATH` pairs, comma-separated.
+Mount each host path and configure its ABS-to-container mapping:
 
 ```yaml
-# docker-compose.yml
-volumes:
-  - /path/to/audiobooks:/media:rw
-  - /path/to/podcasts:/media2:rw
-
 environment:
   VOLUME_MAP: /audiobooks=/media,/podcasts=/media2
-  #           ^ ABS-side root  ^ container mount
-```
-
-The ABS-side root is the path ABS reports for that library (visible in ABS → Libraries → Edit → Folders). Longer paths take priority if multiple entries match.
-
-When `VOLUME_MAP` is empty the app falls back to the original single-volume behaviour (`AUDIOBOOK_PATH` → `/media`).
-
-### Password protection
-
-Set `APP_PASSWORD` in your `.env` to show a login screen before the app loads. Leave it empty (the default) to run without auth.
-
-```env
-APP_PASSWORD=mysecretpassword
-```
-
-The session token is stored in `localStorage` and reused across page reloads. Restarting the container invalidates all sessions.
-
-### Rename history
-
-Every successful rename is recorded in a SQLite database (persisted via the `shelf-renamer-data` Docker named volume). Books that have been renamed before are marked with a green ✓ badge in the book list.
-
-The database file lives at `DB_PATH` (default `/data/shelf-renamer.db`). Mount a host path if you want direct access:
-
-```yaml
 volumes:
-  - /path/to/data:/data
+  - /srv/audiobooks:/media:rw
+  - /srv/podcasts:/media2:rw
 ```
+
+The ABS root is the folder path shown in ABS → Libraries → Edit → Folders. Longer mappings take priority. Each item's actual library folder is used, including libraries with multiple folders.
+
+With `VOLUME_MAP` empty, the app uses the single-volume fallback at `MEDIA_ROOT`. Configure explicit mappings for multiple roots. With mappings present, every library must match an entry; unmapped libraries are blocked rather than silently falling back to another mount. Entries must use absolute paths. Renames cannot escape their library root or follow symlinks inside a library.
+
+### Authentication
+
+Set `APP_PASSWORD` in `.env` to enable login. Sessions use HttpOnly, SameSite=Strict cookies and expire after 12 hours. HTTPS connections also receive Secure cookies. Sign out revokes the session on the server. Restarting the container invalidates all sessions and previews. Login attempts are rate limited.
+
+Use HTTPS for access over untrusted networks. A reverse proxy must preserve the public Host and scheme; configure trusted forwarded headers for Uvicorn as appropriate for that proxy.
+
+The supported deployment uses one Uvicorn worker, as configured in the Docker image. Session and preview-signing state is process-local: do not add workers or load-balanced replicas without shared session/signing storage. A filesystem lock beside the database also coordinates mutations across processes sharing that database.
+
+### History and recovery
+
+Each rename is journaled before disk changes and completed individually in SQLite. Repeated renames retain all operation records. The named `shelf-renamer-data` volume persists the database. To use a host directory, mount it at `/data` with write permission for the container user.
+
+The History tab displays the latest 500 operations. A `pending` entry may have moved files before an interruption: inspect both paths before recovery. The app never blindly retries an interrupted move. Clearing history badges does not delete the operation log. Checking whether books match a template is read-only.
+
+Existing successful history is imported on first startup of v1.20.0. Records already discarded by previous versions cannot be reconstructed. Back up the data volume before upgrading.
 
 ## Naming templates
-
-Templates use `{variable}` placeholders filled from ABS metadata:
 
 | Variable | Example |
 |----------|---------|
@@ -98,116 +83,90 @@ Templates use `{variable}` placeholders filled from ABS metadata:
 | `{author_lf}` | `Tolkien, J.R.R.` |
 | `{authors}` | `Terry Pratchett & Neil Gaiman` |
 | `{year}` | `1937` |
-| `{series}` | `Lord of the Rings` |
+| `{series}` | `The Lord of the Rings` |
 | `{series_index}` | `1` |
-| `{series_index_tag}` | `#01` (zero-padded, with `#` prefix) |
+| `{series_index_tag}` | `#1` (decimals supported) |
 | `{narrator}` | `Andy Serkis` |
 
-Missing variables are substituted with an empty string; empty parens/brackets are cleaned up automatically. Characters forbidden in filenames (`/ \ : * ? " < > |`) are replaced with ` - `.
+Use `/` to create folder levels. Known variables with missing metadata become empty strings; empty segments, parentheses, and brackets are cleaned up. Unknown variables, malformed braces, formatting expressions, and traversal segments are rejected. Forbidden filename characters and control characters become spaces.
 
-**Examples:**
-
-```
+```text
 {author_lf}/{series}/{series_index_tag} - {title}
-  → Tolkien, J.R.R./Lord of the Rings/#01 - The Fellowship of the Ring
+→ Tolkien, J.R.R./The Lord of the Rings/#1 - The Fellowship of the Ring
 
 {author} - {title} ({year})
-  → J.R.R. Tolkien - The Hobbit (1937)
-
-{title}
-  → The Hobbit
+→ J.R.R. Tolkien - The Hobbit (1937)
 ```
 
-## docker-compose.yml
+Single-file items always retain their extension, even when the final template segment is empty, and always reside in a subfolder. A `root` badge identifies files currently sitting directly in the library root.
 
-```yaml
-services:
-  shelf-renamer:
-    image: ghcr.io/eagleffz/shelf-renamer:latest
-    ports:
-      - "8000:8000"
-    environment:
-      ABS_URL: ${ABS_URL}
-      ABS_TOKEN: ${ABS_TOKEN}
-      MEDIA_ROOT: /media
-      DEFAULT_TEMPLATE: ${DEFAULT_TEMPLATE:-{author} - {title} ({year})}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      APP_PASSWORD: ${APP_PASSWORD:-}
-      DB_PATH: /data/shelf-renamer.db
-    volumes:
-      - ${AUDIOBOOK_PATH}:/media:rw
-      - shelf-renamer-data:/data
-    user: "${UID:-1000}:${GID:-1000}"
-    restart: unless-stopped
+## Local development
 
-volumes:
-  shelf-renamer-data:
-```
+Backend requires Python 3.12; frontend builds use Node 24.
 
-## Building locally
-
-**Backend:**
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pytest -v
-DB_PATH=./shelf-renamer.db uvicorn app.main:app --reload  # dev server on :8000
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q
+DB_PATH=./shelf-renamer.db uvicorn app.main:app --reload
 ```
 
-**Frontend:**
+In another terminal:
+
 ```bash
 cd frontend
-npm install
-npm run dev   # Vite dev server on :5173, proxies /api → :8000
+npm ci
+npm test
+npm run lint
+npm run build
+npm run dev
 ```
 
-**Docker:**
+Vite runs on port 5173 and proxies `/api` to port 8000. To build the production image:
+
 ```bash
-docker build -t shelf-renamer:local .
-docker run -p 8000:8000 \
-  -e ABS_URL=http://your-abs:13378 \
-  -e ABS_TOKEN=your-token \
-  -e APP_PASSWORD=secret \
-  -v /path/to/audiobooks:/media \
-  -v /path/to/data:/data \
-  shelf-renamer:local
+docker build --build-arg VERSION=dev -t shelf-renamer:local .
 ```
 
-## CI / Docker images
+Runtime dependencies are pinned in `backend/requirements.txt`; test dependencies are separate in `requirements-dev.txt`. Update the locks with Python 3.12 and pip-tools from the repository root:
 
-GitHub Actions builds and pushes to `ghcr.io/eagleffz/shelf-renamer` on every push to `main`:
+```bash
+pip-compile --upgrade --strip-extras --output-file backend/requirements.txt backend/requirements.in
+pip-compile --strip-extras --output-file backend/requirements-dev.txt backend/requirements-dev.in
+```
 
-| Tag | Description |
-|-----|-------------|
-| `latest` | Most recent main build |
-| `<sha>` | Short git SHA |
-| `YYYY-MM-DD` | Build date |
-
-Platforms: `linux/amd64`, `linux/arm64` (NAS / Raspberry Pi).
+CI runs backend tests, frontend interaction tests, lint, and the production frontend build. Main builds publish amd64/arm64 images to `ghcr.io/eagleffz/shelf-renamer` with `latest`, short commit SHA, and date tags. When the checked-out commit has an exact release tag, that tag is published too. Push the main commit and its release tag together to publish the correct release version.
 
 ## API
 
-All endpoints prefixed with `/api`. Endpoints marked 🔒 require `Authorization: Bearer <token>` when `APP_PASSWORD` is set.
+Protected routes require the login session cookie when `APP_PASSWORD` is set. API documentation is also available at `/docs`.
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/api/health` | — | ABS connectivity check |
-| `GET` | `/api/config` | — | Server-side defaults + `auth_required` flag |
-| `POST` | `/api/auth/login` | — | Exchange password for session token |
-| `GET` | `/api/libraries` | 🔒 | List ABS libraries |
-| `GET` | `/api/libraries/{id}/books` | 🔒 | Books in a library |
-| `GET` | `/api/libraries/{id}/history` | 🔒 | Book IDs previously renamed in this library |
-| `DELETE` | `/api/libraries/{id}/history` | 🔒 | Clear rename history for a library |
-| `POST` | `/api/libraries/{id}/verify` | 🔒 | Mark books already in correct location as done |
-| `POST` | `/api/batch/series` | 🔒 | Bulk-update series sequence numbers via ABS API |
-| `POST` | `/api/preview` | 🔒 | Preview renames (no filesystem write) |
-| `POST` | `/api/rename` | 🔒 | Execute renames + trigger ABS scan |
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/live` | Local process liveness; Docker healthcheck |
+| GET | `/api/health` | ABS connectivity check |
+| GET | `/api/config` | Defaults and connection configuration |
+| POST | `/api/auth/login` | Start a cookie session |
+| GET | `/api/auth/session` | Check session |
+| POST | `/api/auth/logout` | Revoke session |
+| GET | `/api/libraries` | List libraries |
+| GET | `/api/libraries/{id}/books` | List books; `?refresh=true` bypasses cache |
+| GET / DELETE | `/api/libraries/{id}/history` | Read or clear previously-renamed badges |
+| GET | `/api/libraries/{id}/operations` | Latest 500 operation records |
+| POST | `/api/libraries/{id}/scan` | Request an ABS rescan |
+| POST | `/api/batch/series` | Update series positions with per-item results |
+| POST | `/api/preview` | Build signed rename previews without writes |
+| POST | `/api/rename` | Validate the preview, rename, and request scans |
+| POST | `/api/cleanup` | Preview or remove reviewed empty folders |
 
-## Notes
+Rename requests must include each item's `current_path` and `preview_token` from `/api/preview`, with the same template and overrides. Unsafe or stale plans return HTTP 409 before any move. The old client-supplied `/verify` endpoint was removed.
 
-- Renames are at the **folder** level by default. Single-file items (e.g. `.m4b`) are renamed at the file level.
-- `os.rename()` is used — atomic on POSIX within the same filesystem. No rollback on partial batch failure; per-book success/error is reported.
-- The container user (UID 1000 by default) must have write permission on the mounted volume. Set `UID`/`GID` in `.env` to match your file ownership.
-- After rename, ABS re-scans the affected library automatically. If the scan request fails (e.g. token expired), renames are still reported as successful.
-- Restarting the container generates a new session token — any stored browser token becomes invalid and a re-login is required.
+Cleanup accepts `{ "library_id": "...", "dry_run": true }` and returns candidate paths. After review, send those exact paths in `paths` with `dry_run: false`. Library roots and nonempty folders are never removed.
+
+## Filesystem guarantees and limits
+
+Linux uses `renameat2(RENAME_NOREPLACE)` and macOS uses `renameatx_np(RENAME_EXCL)` with directory descriptors that reject symlinks. Unsupported platforms/filesystems fail safely. Moves must remain on the same filesystem.
+
+A batch is not a transaction: completed moves remain completed if another item fails. Each result is recorded separately. ABS scan failures are reported separately and can be retried. Refresh the library after ABS finishes scanning to see updated paths.

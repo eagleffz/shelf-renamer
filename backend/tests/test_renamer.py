@@ -1,27 +1,33 @@
 import os
 import tempfile
+
 import pytest
 from app.models import Author, BookMetadata
-from app.renamer import render_path_template, sanitize_filename, safe_rename, RenameError
+from app.renamer import (
+    RenameError,
+    render_path_template,
+    safe_rename,
+    sanitize_filename,
+)
 
 LIB = "/media"
 
 
 def _book(**kwargs) -> BookMetadata:
-    defaults = dict(
-        id="1",
-        library_id="lib1",
-        title="Guards! Guards!",
-        authors=[Author(id="a1", name="Terry Pratchett")],
-        series="Discworld",
-        series_index=8.0,
-        published_year="1989",
-        narrator="Nigel Planer",
-        abs_path="/abs/books/Guards Guards",
-        abs_library_root="/abs/books",
-        is_file=False,
-        file_extension="",
-    )
+    defaults = {
+        "id": "1",
+        "library_id": "lib1",
+        "title": "Guards! Guards!",
+        "authors": [Author(id="a1", name="Terry Pratchett")],
+        "series": "Discworld",
+        "series_index": 8.0,
+        "published_year": "1989",
+        "narrator": "Nigel Planer",
+        "abs_path": "/abs/books/Guards Guards",
+        "abs_library_root": "/abs/books",
+        "is_file": False,
+        "file_extension": "",
+    }
     defaults.update(kwargs)
     return BookMetadata(**defaults)
 
@@ -75,10 +81,12 @@ def test_missing_year_cleans_empty_parens():
 
 
 def test_multiple_authors():
-    book = _book(authors=[
-        Author(id="a1", name="Terry Pratchett"),
-        Author(id="a2", name="Neil Gaiman"),
-    ])
+    book = _book(
+        authors=[
+            Author(id="a1", name="Terry Pratchett"),
+            Author(id="a2", name="Neil Gaiman"),
+        ]
+    )
     result = rpt("{authors}/{title}", book)
     assert "Terry Pratchett & Neil Gaiman" in result
 
@@ -118,11 +126,9 @@ def test_sanitize_strips_leading_trailing():
     assert sanitize_filename("  hello.  ") == "hello"
 
 
-def test_unknown_variable_becomes_empty():
-    book = _book()
-    result = rpt("{unknown_var}/{title}", book)
-    assert "unknown_var" not in result
-    assert "Guards" in result
+def test_unknown_variable_is_rejected():
+    with pytest.raises(RenameError, match="Unsupported template variable"):
+        rpt("{unknown_var}/{title}", _book())
 
 
 def test_safe_rename_success():
@@ -145,9 +151,11 @@ def test_safe_rename_creates_parent_dirs():
 
 
 def test_safe_rename_missing_source():
-    with tempfile.TemporaryDirectory() as tmp:
-        with pytest.raises(RenameError, match="Source does not exist"):
-            safe_rename(os.path.join(tmp, "nonexistent"), os.path.join(tmp, "dst"))
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        pytest.raises(RenameError, match="Source does not exist"),
+    ):
+        safe_rename(os.path.join(tmp, "nonexistent"), os.path.join(tmp, "dst"))
 
 
 def test_safe_rename_conflict():

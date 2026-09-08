@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import type { BookMetadata } from '../api'
 
 interface Props {
@@ -10,13 +10,14 @@ interface Props {
   onToggle: (id: string) => void
   onSelectAll: () => void
   loading: boolean
+  emptyMessage: string
 }
 
 function ExternalLinkIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
-      <path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
-      <path d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
+      <path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z" />
+      <path d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z" />
     </svg>
   )
 }
@@ -30,7 +31,14 @@ interface RowProps {
   onToggle: (id: string) => void
 }
 
-const BookRow = memo(function BookRow({ book, isSelected, wasRenamed, isCorrect, absUrl, onToggle }: RowProps) {
+const BookRow = memo(function BookRow({
+  book,
+  isSelected,
+  wasRenamed,
+  isCorrect,
+  absUrl,
+  onToggle,
+}: RowProps) {
   const itemName = book.abs_path.split('/').at(-1) ?? book.abs_path
   const rel = book.abs_path.startsWith(book.abs_library_root)
     ? book.abs_path.slice(book.abs_library_root.length).replace(/^\//, '')
@@ -44,25 +52,36 @@ const BookRow = memo(function BookRow({ book, isSelected, wasRenamed, isCorrect,
       <td onClick={(e) => e.stopPropagation()}>
         <input
           type="checkbox"
+          aria-label={`Select ${book.title}`}
           checked={isSelected}
           onChange={() => onToggle(book.id)}
         />
       </td>
       <td>
-        <span className={`badge ${book.is_file ? 'badge-file' : 'badge-folder'}`}>
-          {book.is_file ? book.file_extension.replace('.', '').toUpperCase() : 'folder'}
+        <span
+          className={`badge ${book.is_file ? 'badge-file' : 'badge-folder'}`}
+        >
+          {book.is_file
+            ? book.file_extension.replace('.', '').toUpperCase()
+            : 'folder'}
         </span>
         {isAtRoot && (
-          <span className="badge badge-root" title="File is directly in library root — not in a subfolder">
+          <span
+            className="badge badge-root"
+            title="File is directly in library root — not in a subfolder"
+          >
             root
           </span>
         )}
-        {(wasRenamed || isCorrect) && (
+        {isCorrect && (
+          <span className="badge badge-renamed">Matches template</span>
+        )}
+        {wasRenamed && (
           <span
             className="badge badge-renamed"
-            title={wasRenamed ? 'Previously renamed by shelf-renamer' : 'Already matches the template'}
+            title="Previously renamed by shelf-renamer; this does not indicate current template status"
           >
-            ✓
+            History
           </span>
         )}
       </td>
@@ -90,11 +109,37 @@ const BookRow = memo(function BookRow({ book, isSelected, wasRenamed, isCorrect,
   )
 })
 
-export function BookTable({ books, selected, renamedIds, alreadyCorrectIds, absUrl, onToggle, onSelectAll, loading }: Props) {
-  if (loading) return <p className="loading">Loading books…</p>
-  if (!books.length) return null
-
-  const allSelected = books.length > 0 && selected.size === books.length
+export function BookTable({
+  books,
+  selected,
+  renamedIds,
+  alreadyCorrectIds,
+  absUrl,
+  onToggle,
+  onSelectAll,
+  loading,
+  emptyMessage,
+}: Props) {
+  const checkbox = useRef<HTMLInputElement>(null)
+  const allSelected =
+    books.length > 0 && books.every((book) => selected.has(book.id))
+  const someSelected = books.some((book) => selected.has(book.id))
+  useEffect(() => {
+    if (checkbox.current)
+      checkbox.current.indeterminate = someSelected && !allSelected
+  }, [someSelected, allSelected])
+  if (loading)
+    return (
+      <p className="loading" role="status">
+        Loading books…
+      </p>
+    )
+  if (!books.length)
+    return (
+      <p className="empty-state" role="status">
+        {emptyMessage}
+      </p>
+    )
 
   return (
     <div className="table-wrap">
@@ -104,9 +149,10 @@ export function BookTable({ books, selected, renamedIds, alreadyCorrectIds, absU
             <th>
               <input
                 type="checkbox"
+                ref={checkbox}
                 checked={allSelected}
                 onChange={onSelectAll}
-                title="Select all"
+                aria-label="Select all visible books"
               />
             </th>
             <th>Type</th>

@@ -3,10 +3,22 @@ from __future__ import annotations
 import os
 import re
 import time
+
 import httpx
+
 from .models import Author, BookMetadata, Library
 
-AUDIO_EXTENSIONS = {'.m4b', '.mp3', '.mp4', '.m4a', '.flac', '.aac', '.ogg', '.opus', '.wma'}
+AUDIO_EXTENSIONS = {
+    ".m4b",
+    ".mp3",
+    ".mp4",
+    ".m4a",
+    ".flac",
+    ".aac",
+    ".ogg",
+    ".opus",
+    ".wma",
+}
 
 # How long a fetched library listing stays usable without hitting ABS again.
 CACHE_TTL_SECONDS = 60
@@ -78,11 +90,12 @@ class ABSClient:
             if entry is not None and time.monotonic() - entry[0] < CACHE_TTL_SECONDS:
                 return entry[1]
 
+        roots = [lib_root] if lib_root else []
         if not lib_root:
             libs = await self.get_libraries(use_cache=use_cache)
             for lib in libs:
                 if lib.id == library_id and lib.folders:
-                    lib_root = lib.folders[0]
+                    roots = lib.folders
                     break
 
         items: list[dict] = []
@@ -121,15 +134,24 @@ class ABSClient:
             # with real authors — split on ", " and filter single-word non-name tokens.
             raw_authors = meta.get("authors", [])
             if raw_authors:
-                authors = [Author(id=a.get("id", ""), name=a.get("name", "")) for a in raw_authors]
+                authors = [
+                    Author(id=a.get("id", ""), name=a.get("name", ""))
+                    for a in raw_authors
+                ]
             elif meta.get("authorName"):
                 parts = [p.strip() for p in meta["authorName"].split(",") if p.strip()]
+
                 # Real names have a space (First Last) or initials with dots (J.R.R.) or hyphens.
                 # Single-word role labels like "Übersetzer" (Translator) have none of these.
                 def _looks_like_name(s: str) -> bool:
                     return " " in s or "." in s or "-" in s
+
                 names = [p for p in parts if _looks_like_name(p)]
-                authors = [Author(id="", name=n) for n in names] if names else [Author(id="", name=meta["authorName"])]
+                authors = (
+                    [Author(id="", name=n) for n in names]
+                    if names
+                    else [Author(id="", name=meta["authorName"])]
+                )
             else:
                 authors = []
 
@@ -161,6 +183,12 @@ class ABSClient:
             narrator = narrators[0] if narrators else meta.get("narratorName") or None
 
             item_path = item.get("path", "")
+            matching_roots = [
+                root
+                for root in roots
+                if item_path == root or item_path.startswith(root.rstrip("/") + "/")
+            ]
+            item_root = max(matching_roots, key=len) if matching_roots else ""
             ext = os.path.splitext(item_path)[1].lower()
             is_file = ext in AUDIO_EXTENSIONS
 
@@ -178,7 +206,7 @@ class ABSClient:
                     abs_path=item_path,
                     is_file=is_file,
                     file_extension=ext if is_file else "",
-                    abs_library_root=lib_root,
+                    abs_library_root=item_root,
                 )
             )
         self._items_cache[library_id] = (time.monotonic(), books)
@@ -191,13 +219,33 @@ class ABSClient:
         if series_id:
             entry["id"] = series_id
         try:
+            current = self._check(
+                await self._client.get(f"/api/items/{book_id}?expanded=1")
+            )
+            existing = (
+                current.json().get("media", {}).get("metadata", {}).get("series", [])
+            )
+            matches = [
+                s
+                for s in existing
+                if (series_id and s.get("id") == series_id)
+                or s.get("name") == series_name
+            ]
+            if not matches and len(existing) == 1:
+                matches = existing  # normalize an embedded-number series name
+            if not matches:
+                raise ABSClientError(
+                    409, "Series changed in ABS. Refresh before saving."
+                )
+            updated = [entry if s is matches[0] else s for s in existing]
             r = await self._client.patch(
                 f"/api/items/{book_id}/media",
-                json={"metadata": {"series": [entry]}},
+                json={"metadata": {"series": updated}},
             )
-            return r.is_success
+            self._check(r)
+            return True
         except httpx.HTTPError:
-            return False
+            raise ABSClientError(503, "Cannot reach Audiobookshelf")
         finally:
             # The book's library id is unknown here — dropping everything is cheap.
             self.invalidate()
