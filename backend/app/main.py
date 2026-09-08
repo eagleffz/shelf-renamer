@@ -57,24 +57,26 @@ async def lifespan(app: FastAPI):
     await app.state.abs.close()
 
 
+class ConfiguredCORSMiddleware(CORSMiddleware):
+    def is_allowed_origin(self, origin: str) -> bool:
+        # Share the exact allowlist with the write guard, including DEBUG.
+        return origin in get_settings().trusted_origins()
+
+
 app = FastAPI(title="shelf-renamer", lifespan=lifespan)
-if get_settings().debug:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-        allow_credentials=True,
-    )
+app.add_middleware(
+    ConfiguredCORSMiddleware,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
 
 
 @app.middleware("http")
 async def same_origin_mutations(request: Request, call_next):
     # SameSite cookies plus Origin checks protect cookie-authenticated writes.
     origin = request.headers.get("origin")
-    allowed = {str(request.base_url).rstrip("/")}
-    if get_settings().debug:
-        allowed.add("http://localhost:5173")
+    allowed = {str(request.base_url).rstrip("/"), *get_settings().trusted_origins()}
     if (
         request.method not in {"GET", "HEAD", "OPTIONS"}
         and origin

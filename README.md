@@ -37,6 +37,7 @@ Open [localhost:8000](http://localhost:8000). Choose a library, select books, an
 | `VOLUME_MAP` | empty | Explicit `ABS_ROOT=CONTAINER_ROOT` mappings, comma-separated |
 | `DEFAULT_TEMPLATE` | `{author_lf}/{series}/{series_index_tag} - {title}` in backend; `{author} - {title} ({year})` in Compose | Initial template unless a browser preset was saved |
 | `APP_PASSWORD` | empty | Enable login; empty disables authentication |
+| `ALLOWED_ORIGINS` | empty | Comma-separated trusted browser origins for writes and CORS, in addition to same-origin writes |
 | `DB_PATH` | `/data/shelf-renamer.db` | Persistent SQLite database |
 | `UID` / `GID` | `1000` / `1000` in Compose | Must have permission to write the mounted library |
 | `LOG_LEVEL` | `INFO` | Server logging level |
@@ -63,6 +64,18 @@ With `VOLUME_MAP` empty, the app uses the single-volume fallback at `MEDIA_ROOT`
 Set `APP_PASSWORD` in `.env` to enable login. Sessions use HttpOnly, SameSite=Strict cookies and expire after 12 hours. HTTPS connections also receive Secure cookies. Sign out revokes the session on the server. Restarting the container invalidates all sessions and previews. Login attempts are rate limited.
 
 Use HTTPS for access over untrusted networks. A reverse proxy must preserve the public Host and scheme; configure trusted forwarded headers for Uvicorn as appropriate for that proxy.
+
+If a reverse proxy causes `Cross-origin writes are not allowed`, explicitly whitelist the URL you use to open shelf-renamer in `.env`:
+
+```env
+ALLOWED_ORIGINS=https://renamer.example.com,http://nas.local:8000
+```
+
+The Compose file passes this setting to the container. With an existing custom Compose file, add `ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}` under the service's `environment`. Recreate the container with `docker compose up -d` after changing it.
+
+Use origins only: scheme, hostname, and optional port. Multiple entries are comma-separated; surrounding whitespace and a trailing slash are accepted. Paths, credentials, query strings, fragments, and wildcards are rejected at startup. Scheme and non-default port must match exactly; subdomains are not automatically included. An empty value keeps the default same-origin protection. `DEBUG=true` additionally permits `http://localhost:5173`.
+
+The same allowlist is used for the write guard and credentialed CORS preflight/response headers. It does not bypass login or change SameSite cookie behavior. You should still configure forwarded headers correctly for HTTPS cookie handling.
 
 The supported deployment uses one Uvicorn worker, as configured in the Docker image. Session and preview-signing state is process-local: do not add workers or load-balanced replicas without shared session/signing storage. A filesystem lock beside the database also coordinates mutations across processes sharing that database.
 

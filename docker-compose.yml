@@ -10,6 +10,7 @@ services:
       DEFAULT_TEMPLATE: ${DEFAULT_TEMPLATE:-{author} - {title} ({year})}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_PASSWORD: ${APP_PASSWORD:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       DB_PATH: /data/shelf-renamer.db
 
       # ── Multiple libraries ──────────────────────────────────────────────────
